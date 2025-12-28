@@ -1,0 +1,19 @@
+*.log
+# 排除视频文件
+*.mp4
+*.avi
+*.mov
+*.mkv
+# 排除临时文件和日志
+*.tmp
+*.bak
+./logs/*
+# 排除视频文件
+*.mp4
+*.avi
+*.mov
+*.mkv
+# 排除临时文件和日志
+*.tmp
+*.bak
+./logs/*
