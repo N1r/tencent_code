@@ -14,14 +14,15 @@ import random
 
 # YouTube API Configuration
 CONFIG = {
-    'API_KEY': 'AIzaSyDMVvDeq4xHWFpTh5hGRiZoBettBqrSbcs',
+    #'API_KEY': 'AIzaSyDMVvDeq4xHWFpTh5hGRiZoBettBqrSbcs',
+    'API_KEY': 'AIzaSyABmSbMC15Uf0xVn6NWzNpUG9b9l3a5yaY',
     'CHANNELS': {
         #'CNN': 'UCupvZG-5ko_eiXAupbDfxWw',         # CNN Official Channel
         #'MSNBC': 'UCaXkIU1QidjPwiAYu6GcHjg',       
         #'FoxNews': 'UCXIJgqnII2ZOINSWNOGFThA',
         #'ABCNews': 'UCBi2mrWuNuyYy4gbM6fU18Q',
         #'CBSNews': 'UC8p1vwvWtl6T73JiExfWs1g',
-        'Tucker Carlson Network': 'UCGttrUON87gWfU6dMWm1fcA',
+        #'Tucker Carlson Network': 'UCGttrUON87gWfU6dMWm1fcA',
         #'The Young Turks': 'UC1yBKRuGpC1tSM73A0ZjYjQ',
         'Late Night with Seth Meyers': 'UCVTyTA7-g9nopHeHbeuvpRA',
         'BillOReilly': 'UC4OvD2yIbofl9l4dIlqSNMw',
@@ -30,9 +31,9 @@ CONFIG = {
         'briantylercohen': 'UCQANb2YPwAtK-IQJrLaaUFw',
         #'TCNetwork': 'UCXieXRA4Sr_YOrAmzIN2EgQ',
         'Inside_China_Business': 'UCNlAaPtfHizB_k6wztaHmZg',
-        #'ponderingpolitics': 'UCbU6Rve0XMNZ2a2yaYgjlTA',
-        #'realchris': 'UCcHV234NEAIv-ifDcgZfBfw',
-        #'omaragamyy': 'UCbmOgzvvDg60mXGm9t9Ad5Q',
+        'ponderingpolitics': 'UCbU6Rve0XMNZ2a2yaYgjlTA',
+        'realchris': 'UCcHV234NEAIv-ifDcgZfBfw',
+        'omaragamyy': 'UCbmOgzvvDg60mXGm9t9Ad5Q',
         #'CNBC': 'UCvJJ_dzjViJCoLf5uKUTwoA',
         #'VALUETAINMENT': 'UCIHdDJ0tjn_3j-FS7s_X1kQ',
         #'CNBCtelevision': 'UCrp_UI8XtuYfpiqluWLD7Lw',
@@ -45,10 +46,10 @@ CONFIG = {
         #'Al Jazeera English': 'UCNye-wNBqNL5ZzHSJj3l8Bg',
         #'Novara Media': 'UCOzMAa6IhV6uwYQATYG_2kg',
         },
-    'MAX_RESULTS_PER_CHANNEL': 10,  # 修改为获取最新视频的数量
+    'MAX_RESULTS_PER_CHANNEL': 8,  # 修改为获取最新视频的数量
     'VIDEO_FILTERS': {
-        'MIN_DURATION': 180,
-        'MAX_DURATION': 500,
+        'MIN_DURATION': 120,
+        'MAX_DURATION': 700,
         'MIN_VIEWS': 1000,
         'MIN_COMMENTS': 10
     }

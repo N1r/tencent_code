@@ -5,6 +5,7 @@ import random
 import yaml
 import requests
 import pandas as pd
+import re
 from datetime import datetime, timedelta, timezone
 from PIL import Image, ImageDraw, ImageFont
 from tqdm import tqdm
@@ -25,7 +26,7 @@ error_dir = os.path.join(OUTPUT_DIR, 'ERROR')
 API_KEY = 'sk-2hQb4lo4JuCdWWCflcN41jddIIQzhtSi78Qeb7vWOM40XSkJ'
 API_BASE_URL = 'https://api.302.ai'  # ✅ 修复尾部空格
 API_MODEL = 'deepseek-v3.2'
-#API_MODEL = 'gemini-3-flash-preview'
+
 # 自动选择字体
 def get_font_path():
     possible_fonts = [
@@ -95,7 +96,87 @@ def create_gradient_overlay(width, height, start_alpha=120, end_alpha=220, gradi
     return gradient
 
 # ==================== API 与翻译 ====================
+def batch_translate_with_api(contents: list) -> list:
+    """
+    批量翻译函数，一次性处理所有视频信息
+    """
+    headers = {
+        "Authorization": f"Bearer {API_KEY}",
+        "Content-Type": "application/json",
+    }
+    
+    # 构建批量输入内容
+    batch_input = ""
+    for i, content in enumerate(contents, 1):
+        batch_input += f"{i}. 频道名：{content['channel_name']} 标题：{content['title']} 主题：{content['topic']}\n"
+    
+    prompt = """
+角色（Role）：
+你是一名资深国际政治与军事新闻编辑，具备十年以上中美战略议题报道经验，精通美国政治话语体系、国防术语及舆论叙事逻辑，同时深谙中国主流媒体话语风格与受众心理。你擅长将西方信源转化为符合中国立场、兼具专业权威性与大众传播力的新闻标题。
+
+任务（Task）：
+基于提供的多个视频信息，为每个视频生成一条符合中文新闻传播规律的单行标题，用于国内主流资讯平台发布。
+
+核心目标（Objective）：
+可以标题党，最大化点击率与用户共鸣，符合40岁以上男性喜好的风格, 标题字数控制在20–35字之间，节奏紧凑，关键词前置
+
+输入格式：
+我提供了多个视频的信息，每行格式为：序号. 频道名：xxx 标题：xxx 主题：xxx
+
+输出规范（Output Specification）：
+请严格按照以下JSON格式输出，不要添加任何其他文字：
+```json
+[
+    "标题1",
+    "标题2", 
+    "标题3"
+]
+```
+要求：
+1. 输出必须是有效的JSON数组格式
+2. 数组中的每个标题对应输入中相同序号的视频
+3. 标题数量必须与输入数量完全一致
+4. 每个标题单独一行，用双引号包围
+5. 禁止添加解释、注释或其他任何额外字符
+"""
+    
+    data = {
+        "model": API_MODEL,
+        "messages": [
+            {"role": "system", "content": prompt},
+            {"role": "user", "content": batch_input}
+        ],
+    }
+    
+    try:
+        response = requests.post(f"{API_BASE_URL}/v1/chat/completions", headers=headers, json=data, timeout=60)
+        response.raise_for_status()
+        result = response.json()["choices"][0]["message"]["content"].strip()
+        print(f"API 批量返回: {result}")
+        
+        # 解析JSON结果
+        # 提取JSON数组部分
+        json_match = re.search(r'\[.*?\]', result, re.DOTALL)
+        if json_match:
+            json_str = json_match.group(0)
+            titles = json.loads(json_str)
+            if isinstance(titles, list) and len(titles) == len(contents):
+                return titles
+            else:
+                print(f"❌ 解析的标题数量不匹配，期望{len(contents)}个，实际{len(titles)}个")
+        else:
+            print("❌ 未能从API返回中提取JSON数组")
+        
+        # 如果解析失败，返回原始文件夹名作为备选
+        return [content['title'] for content in contents]
+        
+    except Exception as e:
+        print(f"批量翻译失败: {e}")
+        # 备选方案：返回原始文件夹名
+        return [content['title'] for content in contents]
+
 def translate_with_api(text: str) -> str:
+    """保留原有单条翻译函数作为备用"""
     headers = {
         "Authorization": f"Bearer {API_KEY}",
         "Content-Type": "application/json",
@@ -108,7 +189,7 @@ def translate_with_api(text: str) -> str:
 基于提供的英文原始内容，生成一条符合中文新闻传播规律的单行标题，用于国内主流资讯平台发布。
 
 核心目标（Objective）：
-信息量大, 尽可能标题党，最大化点击率与用户共鸣，符合50岁以上男性喜好的风格, 标题字数控制在20字左右, 节奏紧凑，关键词前置
+可以标题党，最大化点击率与用户共鸣，符合40岁以上男性喜好的风格, 标题字数控制在20–35字之间，节奏紧凑，关键词前置
 禁止添加解释、注释、引号或其他任何额外字符
 
 输出规范（Output Specification）：
@@ -301,20 +382,42 @@ def send_wechat_notification(free_count, paid_count, titles):
         print(f"❌ 微信推送异常: {e}")
 
 def generate_titles(video_paths: list) -> tuple:
-    titles, translated_texts = [], []
+    """
+    优化的标题生成函数，一次性批量处理所有视频
+    """
     excel_path = 'tasks_setting.xlsx'
+    batch_contents = []
+    
+    # 先收集所有视频信息
     for video_path in video_paths:
         folder_name = os.path.basename(os.path.dirname(video_path))
         json_path = os.path.join('output', folder_name, 'gpt_log', 'summary.json')
         topic_list = simple_read_topic(json_path)
         channel_name = find_channel_by_fuzzy_match(excel_path, folder_name)
-        content = f"频道名为：{channel_name} 标题为:{folder_name} 主题为:{topic_list}"
-        translated = translate_with_api(content) or folder_name
-        translated_texts.append(translated)
-        month_day = datetime.now().strftime("%m-%d")
-        full_title = f"【熟肉】 {translated} "
+        
+        batch_contents.append({
+            'title': folder_name,
+            'channel_name': channel_name or '未知频道',
+            'topic': ', '.join(topic_list) if topic_list else '无主题'
+        })
+    
+    if not batch_contents:
+        print("❌ 没有找到任何视频信息")
+        return [], []
+    
+    # 批量调用API
+    print(f"🚀 开始批量处理 {len(batch_contents)} 个视频的标题...")
+    translated_texts = batch_translate_with_api(batch_contents)
+    
+    # 生成最终标题
+    month_day = datetime.now().strftime("%m-%d")
+    titles = []
+    
+    for i, (content, translated) in enumerate(zip(batch_contents, translated_texts)):
+        full_title = f"【熟肉】 {translated} | {month_day}"
         titles.append(full_title)
-        print(full_title)
+        print(f"{i+1}. {full_title}")
+    
     return titles, translated_texts
 
 def timed_published(videos: list) -> list:
@@ -423,7 +526,8 @@ def main():
     paid_count = int(total_videos * paid_ratio)
     free_count = total_videos - paid_count
     split_and_create_yaml(videos, new_covers, titles, dtimes, paid_ratio=paid_ratio)
-    send_wechat_notification(free_count, paid_count, translated_texts)
+
+    #send_wechat_notification(free_count, paid_count, translated_texts)
 
 if __name__ == "__main__":
     main()

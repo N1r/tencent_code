@@ -23,10 +23,10 @@ elif platform.system() == 'Darwin':
 
 # 字幕位置调整
 SRC_MARGIN_V = 8    # 原文位置
-TRANS_MARGIN_V = 45   # 译文位置
+TRANS_MARGIN_V = 48   # 译文位置
 
 # 原文字幕样式
-SRC_FONT_SIZE = 12
+SRC_FONT_SIZE = 15
 SRC_FONT_COLOR = '&HFFFFFF'      # 白色文字
 SRC_OUTLINE_COLOR = '&H000000'   # 黑色描边
 SRC_OUTLINE_WIDTH = 2.0          # 描边宽度
@@ -34,7 +34,7 @@ SRC_SHADOW_COLOR = '&H80000000'  # 半透明黑色阴影
 SRC_BACK_COLOR = '&H66000000'    # 深灰色背景
 
 # # 译文字幕样式&H003366FF
-TRANS_FONT_SIZE = 26
+TRANS_FONT_SIZE = 30
 # TRANS_FONT_COLOR = '&H00FFFF'    # 青色文字
 # TRANS_OUTLINE_COLOR = '&H70303030' # 黑色描边
 # TRANS_OUTLINE_WIDTH = 0.0
@@ -44,7 +44,7 @@ TRANS_FONT_SIZE = 26
 TRANS_FONT_COLOR = '&H0000A5FF'    
 # 纯黑色描边 (Alpha=00 代表不透明)
 TRANS_OUTLINE_COLOR = '&H00000000' 
-TRANS_OUTLINE_WIDTH = 2
+TRANS_OUTLINE_WIDTH = 2.5
 # 阴影/背景 (通常设为半透明黑色，增加立体感)
 # &H80 代表约50%透明度，后面000000是黑色
 TRANS_BACK_COLOR = '&H80000000'
@@ -85,7 +85,7 @@ def build_subtitle_style_src(font_size, font_name, font_color, outline_color, ou
         f"FontSize={font_size},FontName={font_name},"
         f"PrimaryColour={font_color},OutlineColour={outline_color},"
         f"OutlineWidth={outline_width},BackColour={back_color},"
-        f"BorderStyle=1,Alignment=2,MarginV={margin_v},"
+        f"BorderStyle=4,Alignment=2,MarginV={margin_v},"
         f"Shadow=0,MarginL=50,MarginR=50"
     )
 
@@ -171,17 +171,19 @@ def merge_subtitles_to_video():
         ffmpeg_cmd.extend(['-c:v', 'h264_nvenc'])
     else:
         rprint('using default')
-        #ffmpeg_cmd.extend(['-c:v', 'libsvtav1'])
-#        ffmpeg_cmd.extend([
-#    '-c:v', 'libsvtav1',
-#    '-preset', '13',          # 极限速度预设，2核首选
- #   '-crf', '40',             # 高CRF减少运算，平衡体积与速度
-  #  '-svtav1-params', 'tune=1:la_depth=8:scd=0:threads=2',  # 关键提速参数
-   # '-g', '240',              # 加大关键帧间隔，减少重复计算
-   # '-pix_fmt', 'yuv420p'     # 锁定8bit格式，避免10bit额外开销
-   # ])
-
-
+        #ffmpeg_cmd.extend(['-c:v', 'libx264','-preset','fast'])
+        ffmpeg_cmd.extend([
+            '-threads', '2', # 加在 ffmpeg_cmd 中
+            '-c:v', 'libx264',
+            '-preset', 'superfast',          # 比 'fast' 更快，B站可接受
+            '-b:v', '3500k',                 # 固定视频码率（720p 推荐范围）
+            '-maxrate', '4000k',
+            '-bufsize', '4000k',
+            '-pix_fmt', 'yuv420p',           # 确保兼容性（避免 B站报错）
+            '-c:a', 'aac',                   # 音频重编码为 AAC（B站推荐）
+            '-b:a', '128k',                  # 音频码率
+            '-movflags', '+faststart'        # 支持网页边下边播
+        ])
     ffmpeg_cmd.append(OUTPUT_VIDEO)
 
     rprint("🎬 Start merging subtitles (and logo) to video...")
@@ -201,6 +203,7 @@ def merge_subtitles_to_video():
             process.kill()
         return
 
+    '''
     # ============= 4. 拼接流程 (Step 2) =============
     
     # 检查是否需要拼接 (检查文件是否存在)
@@ -278,6 +281,7 @@ def merge_subtitles_to_video():
         for tf in temp_files:
             if os.path.exists(tf):
                 os.remove(tf)
+'''
 
 if __name__ == "__main__":
     merge_subtitles_to_video()

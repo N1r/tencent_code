@@ -7,7 +7,6 @@ import pandas as pd
 from rich.console import Console
 from rich.panel import Panel
 import time
-import shutil
 
 console = Console()
 
@@ -27,42 +26,17 @@ def process_batch():
         raise Exception("Settings check failed")
 
     df = pd.read_excel('batch/tasks_setting.xlsx')
+
+    # >>>>>>>>>> 新增这 1 行 <<<<<<<<<<
+    processed = 0
+
     for index, row in df.iterrows():
-        if pd.isna(row['Status']) or 'Error' in str(row['Status']):
+        if pd.isna(row['Status']):
             total_tasks = len(df)
             video_file = row['Video File']
             
-            if not pd.isna(row['Status']) and 'Error' in str(row['Status']):
-                console.print(Panel(f"Retrying failed task: {video_file}\nTask {index + 1}/{total_tasks}", 
-                                 title="[bold yellow]Retry Task", expand=False))
-                
-                # Restore files from batch/output/ERROR to output
-                error_folder = os.path.join('batch', 'output', 'ERROR', os.path.splitext(video_file)[0])
-                
-                if os.path.exists(error_folder):
-                    # Ensure the output folder exists
-                    os.makedirs('output', exist_ok=True)
-                    
-                    # Copy all contents from ERROR folder for the specific video to output
-                    for item in os.listdir(error_folder):
-                        src_path = os.path.join(error_folder, item)
-                        dst_path = os.path.join('output', item)
-                        
-                        if os.path.isdir(src_path):
-                            if os.path.exists(dst_path):
-                                shutil.rmtree(dst_path)
-                            shutil.copytree(src_path, dst_path)
-                        else:
-                            if os.path.exists(dst_path):
-                                os.remove(dst_path)
-                            shutil.copy2(src_path, dst_path)
-                            
-                    console.print(f"[green]Restored files from ERROR folder for {video_file}")
-                else:
-                    console.print(f"[yellow]Warning: Error folder not found: {error_folder}")
-            else:
-                console.print(Panel(f"Now processing task: {video_file}\nTask {index + 1}/{total_tasks}", 
-                                 title="[bold blue]Current Task", expand=False))
+            console.print(Panel(f"Now processing task: {video_file}\nTask {index + 1}/{total_tasks}", 
+                             title="[bold blue]Current Task", expand=False))
             
             source_language = row['Source Language']
             target_language = row['Target Language']
@@ -71,8 +45,7 @@ def process_batch():
             
             try:
                 dubbing = 0 if pd.isna(row['Dubbing']) else int(row['Dubbing'])
-                is_retry = not pd.isna(row['Status']) and 'Error' in str(row['Status'])
-                status, error_step, error_message = process_video(video_file, dubbing, is_retry)
+                status, error_step, error_message = process_video(video_file, dubbing, False)
                 status_msg = "Done" if status else f"Error: {error_step} - {error_message}"
             except Exception as e:
                 status_msg = f"Error: Unhandled exception - {str(e)}"
@@ -80,17 +53,20 @@ def process_batch():
             finally:
                 update_key('whisper.language', original_source_lang)
                 update_key('target_language', original_target_lang)
-                
+
                 df.at[index, 'Status'] = status_msg
                 df.to_excel('batch/tasks_setting.xlsx', index=False)
                 
                 gc.collect()
-                
                 time.sleep(1)
+                # >>>>>>>>>> 新增这 1 行（放在 time.sleep(1) 后） <<<<<<<<<<
+                if (processed := processed + 1) >= 3:
+                    break
+
         else:
             print(f"Skipping task: {row['Video File']} - Status: {row['Status']}")
 
-    console.print(Panel("All tasks processed!\nCheck out in `batch/output`!", 
+    console.print(Panel("All available tasks processed!\nCheck out in `batch/output`!", 
                        title="[bold green]Batch Processing Complete", expand=False))
 
 if __name__ == "__main__":
