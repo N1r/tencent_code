@@ -1,14 +1,13 @@
 submit: App
 streamers:
-  output/AI is revolutionizing Chinese coal production, and blowing up labor models everywhere else/output_sub.mp4:
+  output/Trump is spiraling and can’t control himself/output_sub.mp4:
     copyright: 1
     no_reprint: 1
     source: null
     tid: 208
-    cover: output/AI is revolutionizing Chinese coal production, and blowing up labor
-      models everywhere else/AI is revolutionizing Chinese coal production, and blowing
-      up labor models everywhere else_new.png
-    title: '【熟肉】 AI颠覆中国煤炭业，全球劳动力模式面临洗牌 '
+    cover: output/Trump is spiraling and can’t control himself/Trump is spiraling
+      and can’t control himself_new.png
+    title: '【熟肉】 特朗普彻底失控！资深政治评论员直言其已“螺旋式下滑” | 双语精校| 每日新闻 '
     desc_format_id: 0
     topic_id: 1167972
     topic_detail:
@@ -26,10 +25,11 @@ streamers:
 
       更希望得到大家的【充电支持】，这是我们持续更新的最大动力！
 
+
       '
     dolby: 1
     lossless_music: 1
-    tag: 英语新闻, 英语学习, 川普, 马斯克, 咨询直通车, 社会观察局, 热点深度观察
+    tag: 每日英语新闻, 英语新闻, 英语学习, 川普, 马斯克, 咨询直通车, 社会观察局, 热点深度观察
     dynamic: ''
     dtime: null
     open-elec: 1

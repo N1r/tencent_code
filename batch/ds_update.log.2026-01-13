@@ -1,0 +1,52 @@
+2026-01-16 17:08:29,758 __init__.py[line:13](Pid:1262361 Tname:MainThread) ERROR Uncaught exception:
+Traceback (most recent call last):
+  File "/root/.local/bin/biliup", line 10, in <module>
+    sys.exit(arg_parser())
+             ~~~~~~~~~~^^
+  File "/root/.local/share/uv/tools/biliup/lib/python3.13/site-packages/biliup/__main__.py", line 21, in arg_parser
+    asyncio.run(main())
+    ~~~~~~~~~~~^^^^^^^^
+  File "/root/miniconda3/lib/python3.13/asyncio/runners.py", line 195, in run
+    return runner.run(main)
+           ~~~~~~~~~~^^^^^^
+  File "/root/miniconda3/lib/python3.13/asyncio/runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/root/miniconda3/lib/python3.13/asyncio/base_events.py", line 725, in run_until_complete
+    return future.result()
+           ~~~~~~~~~~~~~^^
+  File "/root/.local/share/uv/tools/biliup/lib/python3.13/site-packages/biliup/__main__.py", line 33, in main
+    await loop.run_in_executor(None, stream_gears.main_loop)
+  File "/root/miniconda3/lib/python3.13/concurrent/futures/thread.py", line 59, in run
+    result = self.fn(*self.args, **self.kwargs)
+RuntimeError: [1mUnknown Error[22m
+├╴at [3m/home/runner/work/biliup/biliup/crates/biliup-cli/src/uploader.rs:203:18[23m
+│
+╰─▶ [1mResponseData { code: 21103, data: None, message: "稿件标题过长,已经超过80个字符", ttl: Some(1) }[22m
+    ╰╴at [3m/home/runner/work/biliup/biliup/crates/biliup-cli/src/uploader.rs:203:18[23m
+2026-01-19 08:39:38,477 __init__.py[line:13](Pid:2141344 Tname:MainThread) ERROR Uncaught exception:
+Traceback (most recent call last):
+  File "/root/.local/bin/biliup", line 10, in <module>
+    sys.exit(arg_parser())
+             ~~~~~~~~~~^^
+  File "/root/.local/share/uv/tools/biliup/lib/python3.13/site-packages/biliup/__main__.py", line 21, in arg_parser
+    asyncio.run(main())
+    ~~~~~~~~~~~^^^^^^^^
+  File "/root/miniconda3/lib/python3.13/asyncio/runners.py", line 195, in run
+    return runner.run(main)
+           ~~~~~~~~~~^^^^^^
+  File "/root/miniconda3/lib/python3.13/asyncio/runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/root/miniconda3/lib/python3.13/asyncio/base_events.py", line 725, in run_until_complete
+    return future.result()
+           ~~~~~~~~~~~~~^^
+  File "/root/.local/share/uv/tools/biliup/lib/python3.13/site-packages/biliup/__main__.py", line 33, in main
+    await loop.run_in_executor(None, stream_gears.main_loop)
+  File "/root/miniconda3/lib/python3.13/concurrent/futures/thread.py", line 59, in run
+    result = self.fn(*self.args, **self.kwargs)
+RuntimeError: [1mUnknown Error[22m
+├╴at [3m/home/runner/work/biliup/biliup/crates/biliup-cli/src/uploader.rs:203:18[23m
+│
+╰─▶ [1mResponseData { code: 21103, data: None, message: "稿件标题过长,已经超过80个字符", ttl: Some(1) }[22m
+    ╰╴at [3m/home/runner/work/biliup/biliup/crates/biliup-cli/src/uploader.rs:203:18[23m

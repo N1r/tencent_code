@@ -1,0 +1,61 @@
+{
+  "verified": {
+    "MeidasTouch": {
+      "id": "UC9r9HYFxEQOBXSopFS61ZWg",
+      "actual_name": "MeidasTouch",
+      "stats": {
+        "title": "MeidasTouch",
+        "customUrl": "@meidastouch",
+        "subscriberCount": 5800000,
+        "videoCount": 20286,
+        "description": "The fastest growing independent news network in the world. We cover breaking news, politics, law and"
+      }
+    },
+    "FoxNews": {
+      "id": "UCXIJgqnII2ZOINSWNOGFThA",
+      "actual_name": "Fox News",
+      "stats": {
+        "title": "Fox News",
+        "customUrl": "@foxnews",
+        "subscriberCount": 14700000,
+        "videoCount": 132187,
+        "description": "FOX News Channel (FNC) is a 24-hour all-encompassing news service dedicated to delivering breaking n"
+      }
+    },
+    "briantylercohen": {
+      "id": "UCQANb2YPwAtK-IQJrLaaUFw",
+      "actual_name": "Brian Tyler Cohen",
+      "stats": {
+        "title": "Brian Tyler Cohen",
+        "customUrl": "@briantylercohen",
+        "subscriberCount": 4950000,
+        "videoCount": 6654,
+        "description": "Brian Tyler Cohen is one of the most viewed independent progressive political hosts on YouTube. Subs"
+      }
+    },
+    "David Pakman": {
+      "id": "UCvixJtaXuNdMPUGdOPcY8Ag",
+      "actual_name": "David Pakman Show",
+      "stats": {
+        "title": "David Pakman Show",
+        "customUrl": "@thedavidpakmanshow",
+        "subscriberCount": 3430000,
+        "videoCount": 41860,
+        "description": "One of the most watched independent progressive programs in the country. Subscribe for daily new cli"
+      }
+    }
+  },
+  "invalid": {
+    "The Hill": "UCPWXiRWZ29zrxPFIQT7eHSA",
+    "Forbes Breaking News": "UCuTiq7iBWzbKfvTqNhUz7bg",
+    "Tucker Carlson": "UCxwubvG70lardn6CkfVdnSw",
+    "NBCNews": "UCeY0bbntWzzVIaj2z3QigXg",
+    "CNN": "UCupvZG-5ko_eiXAupbDfxWw",
+    "ABC News": "UCBi2mrWuNuyYy4gbM6fU18Q",
+    "Congress Clips": "UCoQqYNMaXWaN3H50ntHjNkg",
+    "Stephen A Smith": "UCo7ttKxbhLNS0fuQUIFrrAA",
+    "Ben Shapiro": "UCnQC_G5Xsjhp9fEJKuIcrSw",
+    "Benny Johnson": "UCfiCnGMHYrEWU97NAdzQ1Fw"
+  },
+  "timestamp": "2026-01-11 05:53:26"
+}

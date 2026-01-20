@@ -12,21 +12,22 @@ from core.utils import * # 假设 rprint 和 load_key 在这里
 
 # 字体配置 - 推荐方案：Arial/思源黑体组合
 FONT_NAME = 'Arial'
-TRANS_FONT_NAME = 'Source Han Sans SC' # 如果没有安装此字体，Linux下会自动回退
+#TRANS_FONT_NAME = 'Source Han Sans SC' # 如果没有安装此字体，Linux下会自动回退
+TRANS_FONT_NAME = 'HYWenHei' # 如果没有安装此字体，Linux下会自动回退
 
 if platform.system() == 'Linux':
-    FONT_NAME = 'NotoSansCJK-Regular'
-    TRANS_FONT_NAME = 'NotoSansCJK-Regular'
+    FONT_NAME = 'HYWenHei'
+    TRANS_FONT_NAME = 'HYWenHei'
 elif platform.system() == 'Darwin':
     FONT_NAME = 'Arial Unicode MS'
     TRANS_FONT_NAME = 'Arial Unicode MS'
 
 # 字幕位置调整
 SRC_MARGIN_V = 8    # 原文位置
-TRANS_MARGIN_V = 48   # 译文位置
+TRANS_MARGIN_V = 54   # 译文位置
 
 # 原文字幕样式
-SRC_FONT_SIZE = 15
+SRC_FONT_SIZE = 14
 SRC_FONT_COLOR = '&HFFFFFF'      # 白色文字
 SRC_OUTLINE_COLOR = '&H000000'   # 黑色描边
 SRC_OUTLINE_WIDTH = 2.0          # 描边宽度
@@ -34,7 +35,7 @@ SRC_SHADOW_COLOR = '&H80000000'  # 半透明黑色阴影
 SRC_BACK_COLOR = '&H66000000'    # 深灰色背景
 
 # # 译文字幕样式&H003366FF
-TRANS_FONT_SIZE = 30
+TRANS_FONT_SIZE = 20
 # TRANS_FONT_COLOR = '&H00FFFF'    # 青色文字
 # TRANS_OUTLINE_COLOR = '&H70303030' # 黑色描边
 # TRANS_OUTLINE_WIDTH = 0.0
@@ -44,7 +45,7 @@ TRANS_FONT_SIZE = 30
 TRANS_FONT_COLOR = '&H0000A5FF'    
 # 纯黑色描边 (Alpha=00 代表不透明)
 TRANS_OUTLINE_COLOR = '&H00000000' 
-TRANS_OUTLINE_WIDTH = 2.5
+TRANS_OUTLINE_WIDTH = 3
 # 阴影/背景 (通常设为半透明黑色，增加立体感)
 # &H80 代表约50%透明度，后面000000是黑色
 TRANS_BACK_COLOR = '&H80000000'
@@ -76,8 +77,8 @@ def build_subtitle_style(font_size, font_name, font_color, outline_color, outlin
         f"FontSize={font_size},FontName={font_name},"
         f"PrimaryColour={font_color},OutlineColour={outline_color},"
         f"OutlineWidth={outline_width},BackColour={back_color},"
-        f"BorderStyle=1,Alignment=2,MarginV={margin_v},"
-        f"Bold=1,Italic=0,Spacing=1,Shadow=0,MarginL=50,MarginR=50"
+        f"BorderStyle=4,Alignment=2,MarginV={margin_v},"
+        f"Bold=0,Italic=0,Spacing=1,Shadow=0,MarginL=25,MarginR=25"
     )
 def build_subtitle_style_src(font_size, font_name, font_color, outline_color, outline_width, back_color, margin_v):
     """生成 ASS/SRT 样式字符串"""
@@ -86,7 +87,7 @@ def build_subtitle_style_src(font_size, font_name, font_color, outline_color, ou
         f"PrimaryColour={font_color},OutlineColour={outline_color},"
         f"OutlineWidth={outline_width},BackColour={back_color},"
         f"BorderStyle=4,Alignment=2,MarginV={margin_v},"
-        f"Shadow=0,MarginL=50,MarginR=50"
+        f"Shadow=0,MarginL=15,MarginR=15"
     )
 
 
@@ -173,17 +174,50 @@ def merge_subtitles_to_video():
         rprint('using default')
         #ffmpeg_cmd.extend(['-c:v', 'libx264','-preset','fast'])
         ffmpeg_cmd.extend([
-            '-threads', '2', # 加在 ffmpeg_cmd 中
+            # 线程控制
+            '-threads', '2',
+            
+            # 视频编码（B站要求 + 低资源优化）
             '-c:v', 'libx264',
-            '-preset', 'superfast',          # 比 'fast' 更快，B站可接受
-            '-b:v', '3500k',                 # 固定视频码率（720p 推荐范围）
-            '-maxrate', '4000k',
-            '-bufsize', '4000k',
-            '-pix_fmt', 'yuv420p',           # 确保兼容性（避免 B站报错）
-            '-c:a', 'aac',                   # 音频重编码为 AAC（B站推荐）
-            '-b:a', '128k',                  # 音频码率
-            '-movflags', '+faststart'        # 支持网页边下边播
-        ])
+            '-profile:v', 'high',          # B站要求
+            '-level', '4.0',                # B站要求
+            '-preset', 'veryfast',          # 速度和质量平衡
+            '-tune', 'zerolatency',         # 减少内存占用
+            
+            # 码率控制（适合2核2G）
+            '-b:v', '3000k',
+            '-maxrate', '3500k',
+            '-bufsize', '3500k',
+            
+            # 像素格式（B站必须）
+            '-pix_fmt', 'yuv420p',
+            
+            # 音频编码（B站推荐）
+            '-c:a', 'aac',
+            '-b:a', '128k',
+            '-ar', '48000',
+            '-ac', '2',
+            
+            # 优化和兼容性
+            '-movflags', '+faststart',
+            '-max_muxing_queue_size', '1024',
+            
+            ])
+        
+
+
+        # ffmpeg_cmd.extend([
+        #     '-threads', '2', # 加在 ffmpeg_cmd 中
+        #     '-c:v', 'libx264',
+        #     '-preset', 'superfast',          # 比 'fast' 更快，B站可接受
+        #     '-b:v', '3500k',                 # 固定视频码率（720p 推荐范围）
+        #     '-maxrate', '4000k',
+        #     '-bufsize', '4000k',
+        #     '-pix_fmt', 'yuv420p',           # 确保兼容性（避免 B站报错）
+        #     '-c:a', 'aac',                   # 音频重编码为 AAC（B站推荐）
+        #     '-b:a', '128k',                  # 音频码率
+        #     '-movflags', '+faststart'        # 支持网页边下边播
+        # ])
     ffmpeg_cmd.append(OUTPUT_VIDEO)
 
     rprint("🎬 Start merging subtitles (and logo) to video...")

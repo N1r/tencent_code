@@ -17,20 +17,19 @@ VIDEO_SUFFIX = '.mp4'
 NEW_COVER_SUFFIX = '_new.png'
 TARGET_WIDTH = 1920
 TARGET_HEIGHT = 1080
-TAG = ['英语新闻, 英语学习, 川普, 马斯克, 咨询直通车, 社会观察局, 热点深度观察']
+TAG = ['每日英语新闻, 英语新闻, 英语学习, 川普, 马斯克, 咨询直通车, 社会观察局, 热点深度观察']
 YAML_OUTPUT_FILE = 'config_bili.yaml'
 error_dir = os.path.join(OUTPUT_DIR, 'ERROR')
 
 # API 配置
 API_KEY = 'sk-2hQb4lo4JuCdWWCflcN41jddIIQzhtSi78Qeb7vWOM40XSkJ'
 API_BASE_URL = 'https://api.302.ai'  # ✅ 修复尾部空格
-API_MODEL = 'deepseek-v3.2'
-#API_MODEL = 'gemini-3-flash-preview'
+#API_MODEL = 'sophnet/DeepSeek-V3.2'
+API_MODEL = 'gemini-2.5-flash-lite-preview-09-2025'
 # 自动选择字体
 def get_font_path():
     possible_fonts = [
-        "Fonts/msyhbd.ttc",
-        "Fonts\\msyhbd.ttc",
+        #"Fonts/HYWenHei-65W.ttf",
         "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc",
         "/usr/share/fonts/google-noto-cjk/NotoSansCJK-Bold.ttc",
         "/usr/share/fonts/dejavu/DejaVuSans-Bold.ttf",
@@ -108,7 +107,7 @@ def translate_with_api(text: str) -> str:
 基于提供的英文原始内容，生成一条符合中文新闻传播规律的单行标题，用于国内主流资讯平台发布。
 
 核心目标（Objective）：
-信息量大, 尽可能标题党，最大化点击率与用户共鸣，符合50岁以上男性喜好的风格, 标题字数控制在20字左右, 节奏紧凑，关键词前置
+信息量大, 尽可能标题党，最大化点击率与用户共鸣，符合50岁以上男性喜好的风格, 标题字数控制在25字左右, 节奏紧凑，关键词前置
 禁止添加解释、注释、引号或其他任何额外字符
 
 输出规范（Output Specification）：
@@ -312,7 +311,7 @@ def generate_titles(video_paths: list) -> tuple:
         translated = translate_with_api(content) or folder_name
         translated_texts.append(translated)
         month_day = datetime.now().strftime("%m-%d")
-        full_title = f"【熟肉】 {translated} "
+        full_title = f"【熟肉】 {translated} | 双语精校| 每日新闻 "
         titles.append(full_title)
         print(full_title)
     return titles, translated_texts
@@ -418,7 +417,7 @@ def main():
     new_covers = find_files_with_suffix(OUTPUT_DIR, NEW_COVER_SUFFIX)
     assert len(new_covers) == len(videos) == len(titles), "文件数量不一致！"
 
-    paid_ratio = 0.3
+    paid_ratio = 0.1
     total_videos = len(videos)
     paid_count = int(total_videos * paid_ratio)
     free_count = total_videos - paid_count

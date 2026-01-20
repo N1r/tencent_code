@@ -60,7 +60,7 @@ def process_batch():
                 gc.collect()
                 time.sleep(1)
                 # >>>>>>>>>> 新增这 1 行（放在 time.sleep(1) 后） <<<<<<<<<<
-                if (processed := processed + 1) >= 3:
+                if (processed := processed + 1) >= 6:
                     break
 
         else:
