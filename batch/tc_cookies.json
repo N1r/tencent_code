@@ -1,20 +1,80 @@
 [
   {
-    "name": "om_access_token",
-    "value": "000077584e55e4d906c813f17aa802ab67a056302648eeb34e0b1202fcc350505027a655b6999118ffc8f83bff44830de2ae1aac45ae9b054ddbb0444f4bccae44hi",
-    "domain": ".shizi.qq.com",
+    "name": "ui",
+    "value": "0D34BEC3-5FC9-4069-8BAB-3AE2BE645BC0",
+    "domain": ".graph.qq.com",
     "path": "/",
-    "expires": 1771098401.491281,
+    "expires": 1800543770.053925,
     "httpOnly": false,
     "secure": false,
     "sameSite": "Lax"
   },
   {
-    "name": "account_id",
-    "value": "24255050",
-    "domain": ".shizi.qq.com",
+    "name": "pt_login_sig",
+    "value": "V*z0-tVmK0DvTuqv3*c7cR6Z1hfEe3*LZM3He*00v9Gh2*Y5NktmZT7bKLEcYdFI",
+    "domain": ".ptlogin2.qq.com",
     "path": "/",
-    "expires": 1771098401.491436,
+    "expires": -1,
+    "httpOnly": false,
+    "secure": true,
+    "sameSite": "None"
+  },
+  {
+    "name": "pt_clientip",
+    "value": "1bd8916bb37ba104",
+    "domain": ".ptlogin2.qq.com",
+    "path": "/",
+    "expires": -1,
+    "httpOnly": false,
+    "secure": true,
+    "sameSite": "None"
+  },
+  {
+    "name": "pt_serverip",
+    "value": "fa027f0000019b1c",
+    "domain": ".ptlogin2.qq.com",
+    "path": "/",
+    "expires": -1,
+    "httpOnly": false,
+    "secure": true,
+    "sameSite": "None"
+  },
+  {
+    "name": "pt_local_token",
+    "value": "1570007613",
+    "domain": ".ptlogin2.qq.com",
+    "path": "/",
+    "expires": -1,
+    "httpOnly": false,
+    "secure": true,
+    "sameSite": "None"
+  },
+  {
+    "name": "uikey",
+    "value": "b4e9d77eb142e416e4e7226fd193ada7945f7db55b4314d331634fcbd482d6c3",
+    "domain": ".ptlogin2.qq.com",
+    "path": "/",
+    "expires": -1,
+    "httpOnly": false,
+    "secure": true,
+    "sameSite": "None"
+  },
+  {
+    "name": "pt_guid_sig",
+    "value": "3eabbf61a770dc3802f22d1b83b00587239c4a6879229493bce53e02cd9c019c",
+    "domain": ".ptlogin2.qq.com",
+    "path": "/",
+    "expires": 1772377351.827308,
+    "httpOnly": false,
+    "secure": true,
+    "sameSite": "None"
+  },
+  {
+    "name": "__aegis_uid",
+    "value": "fa027f0000019b1c-1bd8916bb37ba104-6949",
+    "domain": ".xui.ptlogin2.qq.com",
+    "path": "/",
+    "expires": 1769958169,
     "httpOnly": false,
     "secure": false,
     "sameSite": "Lax"
@@ -24,7 +84,37 @@
     "value": "8QIf3nxc640evT/a7gE=",
     "domain": ".shizi.qq.com",
     "path": "/",
-    "expires": 1768549602.006514,
+    "expires": 1769828592.361673,
+    "httpOnly": false,
+    "secure": false,
+    "sameSite": "Lax"
+  },
+  {
+    "name": "qrsig",
+    "value": "e3a1e5d241e42b6ab9251606fb223b962885b4274c30b5f50d4c1249bd47d627a143e11b15e35e9e162982a078162e258014a59aa489dfabcc521f21466ac949",
+    "domain": ".ptlogin2.qq.com",
+    "path": "/",
+    "expires": -1,
+    "httpOnly": false,
+    "secure": true,
+    "sameSite": "None"
+  },
+  {
+    "name": "om_access_token",
+    "value": "00661f7313304d3ea1a1c32c1cc229971706b29d7546e5c05efa92f384a5592d82b978a9dc166dcfc6b8cbf9a657b56b9d9ae407e1fcc4e34059255b1aa21acbaced",
+    "domain": ".shizi.qq.com",
+    "path": "/",
+    "expires": 1772377391.908177,
+    "httpOnly": false,
+    "secure": false,
+    "sameSite": "Lax"
+  },
+  {
+    "name": "account_id",
+    "value": "24255050",
+    "domain": ".shizi.qq.com",
+    "path": "/",
+    "expires": 1772377391.908326,
     "httpOnly": false,
     "secure": false,
     "sameSite": "Lax"

@@ -7,55 +7,139 @@ import requests
 import pandas as pd
 import re
 from datetime import datetime, timedelta, timezone
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageFilter
 from tqdm import tqdm
-from fuzzywuzzy import fuzz
+from fuzzywuzzy import fuzz  # 保持原代码的 fuzzywuzzy，也可以换成 rapidfuzz
 
-# ==================== 全局常量 ====================
+# 尝试导入 jieba 进行智能名词识别
+try:
+    import jieba
+    import jieba.posseg as pseg
+    HAS_JIEBA = True
+except ImportError:
+    HAS_JIEBA = False
+    print("🚩 提示：未安装 jieba，将使用基础随机逻辑。建议运行 'pip install jieba'")
+
+# ==================== 全局常量与配置 ====================
 OUTPUT_DIR = 'output'
 COVER_SUFFIX = '.jpg'
-VIDEO_SUFFIX = '.mp4'
 NEW_COVER_SUFFIX = '_new.png'
 TARGET_WIDTH = 1920
 TARGET_HEIGHT = 1080
-TAG = ['英语新闻, 英语学习, 川普, 马斯克, 咨询直通车, 社会观察局, 热点深度观察']
-YAML_OUTPUT_FILE = 'config_bili.yaml'
-error_dir = os.path.join(OUTPUT_DIR, 'ERROR')
+TAG = ['每日英语新闻, 英语新闻, 英语学习, 川普, 马斯克, 咨询直通车, 社会观察局, 热点深度观察']
 
 # API 配置
 API_KEY = 'sk-2hQb4lo4JuCdWWCflcN41jddIIQzhtSi78Qeb7vWOM40XSkJ'
-API_BASE_URL = 'https://api.302.ai'  # ✅ 修复尾部空格
-API_MODEL = 'deepseek-v3.2'
+API_BASE_URL = 'https://api.302.ai'
+#API_MODEL = 'gemini-2.5-flash-lite-preview-09-2025'
+API_MODEL = 'qwen3-max-2026-01-23'
+#API_MODEL = 'grok-4-1-fast-non-reasoning'
+# 视觉规范
+HIGHLIGHT_COLOR = "#FFD700"  # 品牌金黄
+NORMAL_COLOR = "#FFFFFF"     # 纯白
+BG_BOX_COLOR = (0, 0, 0, 230) # 黑色半透明背景块
+RED_ACCENT = "#E21918"       # 标志性新闻红
 
 # 自动选择字体
 def get_font_path():
     possible_fonts = [
-        "Fonts/msyhbd.ttc",
-        "Fonts\\msyhbd.ttc",
-        "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc",
+        "/root/VideoLingo/batch/Fonts/HYWenHei-65W.ttf",
         "/usr/share/fonts/google-noto-cjk/NotoSansCJK-Bold.ttc",
-        "/usr/share/fonts/dejavu/DejaVuSans-Bold.ttf",
-        "DejaVuSans-Bold.ttf",
+        "SourceHanSansSC-Bold.otf",
+        "SimHei.ttf",
         "arial.ttf"
     ]
     for fp in possible_fonts:
-        if os.path.exists(fp):
-            return fp
+        if os.path.exists(fp): return fp
     return "arial.ttf"
 
 FONT_PATH = get_font_path()
-print(f"【字体】使用: {FONT_PATH}")
+print(f"【系统】使用字体: {FONT_PATH}")
 
-# ==================== 工具函数 ====================
-def find_files_with_suffix(directory: str, suffix: str) -> list:
-    return [
-        os.path.join(root, file)
-        for root, _, files in os.walk(directory)
-        for file in files
-        if file.endswith(suffix)
+# ==================== 0. 新增：信息提取工具 (来自代码2) ====================
+
+def simple_read_topic(file_path: str) -> list:
+    """读取 gpt_log 下的 summary.json 获取 topic"""
+    if not os.path.exists(file_path):
+        return []
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        # 兼容列表或字典结构
+        if isinstance(data, list):
+            return [item['response']['topic'] for item in data if 'response' in item and 'topic' in item['response']]
+        elif isinstance(data, dict) and 'response' in data and 'topic' in data['response']:
+             return [data['response']['topic']]
+        return []
+    except Exception as e:
+        print(f"⚠️ 读取 Topic 失败: {e}")
+        return []
+
+def quick_read_srt(file_path: str) -> str:
+    """极简读取 SRT 纯文本"""
+    with open(file_path, 'r', encoding='utf-8-sig', errors='ignore') as f:
+        content = f.read()
+    
+    # 匹配时间轴的正则
+    pattern = r'\d{2}:\d{2}:\d{2},\d{3} --> \d{2}:\d{2}:\d{2},\d{3}'
+    
+    # 一行搞定：过滤空行、数字行、时间行
+    lines = [
+        line.strip() for line in content.splitlines() 
+        if line.strip() and not line.strip().isdigit() and not re.match(pattern, line)
     ]
+    
+    return "\n".join(lines)
+def find_channel_by_fuzzy_match(excel_path: str, target_title: str, min_similarity=80):
+    """根据文件夹名模糊匹配 Excel 中的频道名"""
+    if not os.path.exists(excel_path):
+        print(f"⚠️ 未找到 {excel_path}，跳过频道匹配")
+        return None
+    try:
+        df = pd.read_excel(excel_path)
+        if 'title' not in df.columns or 'channel_name' not in df.columns:
+            print("⚠️ Excel 缺少 'title' 或 'channel_name' 列")
+            return None
+        
+        best_match, best_score = None, 0
+        for _, row in df.iterrows():
+            current_title = str(row['title'])
+            # 使用 fuzzywuzzy 的 ratio
+            similarity = fuzz.ratio(target_title.lower(), current_title.lower())
+            if similarity > best_score and similarity >= min_similarity:
+                best_score, best_match = similarity, row['channel_name']
+        
+        if best_match:
+            # print(f"✅ 频道匹配成功（{best_score}%）：'{best_match}'")
+            return best_match
+        else:
+            return None
+    except Exception as e:
+        print(f"❌ 频道匹配出错: {e}")
+        return None
 
-def wrap_text(text: str, font: ImageFont.FreeTypeFont, max_width: int) -> list:
+# ==================== 1. 智能高亮逻辑 (避开虚词) ====================
+
+def get_random_noun_highlight(text):
+    """提取标题中的核心名词实体，避开虚词"""
+    # 移除 [频道名] 干扰
+    clean_text = re.sub(r'\[.*?\]', '', text)
+    
+    if HAS_JIEBA:
+        words = pseg.cut(clean_text)
+        nouns = [w.word for w in words if w.flag in ['n', 'nr', 'ns', 'nt', 'nz'] and len(w.word) > 1]
+        if nouns:
+            return random.choice(nouns)
+    
+    STOP_WORDS = ["的", "了", "在", "是", "被", "已经", "不仅", "甚至", "而且"]
+    parts = re.findall(r'[\u4e00-\u9fa5]{2,4}', clean_text)
+    valid_parts = [p for p in parts if p not in STOP_WORDS]
+    
+    return random.choice(valid_parts) if valid_parts else None
+
+# ==================== 2. 封面绘图核心 (精准对齐) ====================
+
+def wrap_text_styled(text, font, max_width):
     lines = []
     current_line = ""
     for char in text:
@@ -64,470 +148,317 @@ def wrap_text(text: str, font: ImageFont.FreeTypeFont, max_width: int) -> list:
         else:
             lines.append(current_line)
             current_line = char
-    if current_line:
-        lines.append(current_line)
-    return lines
+    lines.append(current_line)
+    return lines[:2] 
 
-def draw_text_with_effects(draw, text, position, font, fill, outline_color="black", outline_width=4, shadow_color=None):
-    x, y = position
-    if shadow_color:
-        draw.text((x + 4, y + 4), text, font=font, fill=shadow_color)
-    if outline_color and outline_width > 0:
-        offsets = []
-        for dx in range(-outline_width, outline_width + 1):
-            for dy in range(-outline_width, outline_width + 1):
-                if dx == 0 and dy == 0:
-                    continue
-                if dx*dx + dy*dy <= outline_width*outline_width:
-                    offsets.append((dx, dy))
-        for dx, dy in offsets:
-            draw.text((x + dx, y + dy), text, font=font, fill=outline_color)
-    draw.text((x, y), text, font=font, fill=fill)
+def draw_text_line_centered(draw, line, font, x_start, y_top, box_height, highlight_word):
+    left, top, right, bottom = font.getbbox(line)
+    text_height = bottom - top
+    vertical_center_offset = (box_height - text_height) // 2 - top
+    draw_y = y_top + vertical_center_offset
 
-def create_gradient_overlay(width, height, start_alpha=120, end_alpha=220, gradient_height_percent=0.45):
-    gradient = Image.new('RGBA', (width, height), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(gradient)
-    grad_h = int(height * gradient_height_percent)
-    start_y = height - grad_h
-    for y in range(start_y, height):
-        alpha = int(start_alpha + (end_alpha - start_alpha) * (y - start_y) / grad_h)
-        alpha = max(0, min(255, alpha))
-        draw.rectangle([(0, y), (width, y + 1)], fill=(0, 0, 0, alpha))
-    return gradient
+    if not highlight_word or highlight_word not in line:
+        draw.text((x_start, draw_y), line, font=font, fill=NORMAL_COLOR)
+        return
 
-# ==================== API 与翻译 ====================
-def batch_translate_with_api(contents: list) -> list:
-    """
-    批量翻译函数，一次性处理所有视频信息
-    """
-    headers = {
-        "Authorization": f"Bearer {API_KEY}",
-        "Content-Type": "application/json",
-    }
-    
-    # 构建批量输入内容
-    batch_input = ""
-    for i, content in enumerate(contents, 1):
-        batch_input += f"{i}. 频道名：{content['channel_name']} 标题：{content['title']} 主题：{content['topic']}\n"
-    
-    prompt = """
-角色（Role）：
-你是一名资深国际政治与军事新闻编辑，具备十年以上中美战略议题报道经验，精通美国政治话语体系、国防术语及舆论叙事逻辑，同时深谙中国主流媒体话语风格与受众心理。你擅长将西方信源转化为符合中国立场、兼具专业权威性与大众传播力的新闻标题。
+    parts = line.split(highlight_word, 1)
+    current_x = x_start
+    draw.text((current_x, draw_y), parts[0], font=font, fill=NORMAL_COLOR)
+    current_x += font.getlength(parts[0])
+    draw.text((current_x, draw_y), highlight_word, font=font, fill=HIGHLIGHT_COLOR)
+    current_x += font.getlength(highlight_word)
+    draw.text((current_x, draw_y), parts[1], font=font, fill=NORMAL_COLOR)
 
-任务（Task）：
-基于提供的多个视频信息，为每个视频生成一条符合中文新闻传播规律的单行标题，用于国内主流资讯平台发布。
-
-核心目标（Objective）：
-可以标题党，最大化点击率与用户共鸣，符合40岁以上男性喜好的风格, 标题字数控制在20–35字之间，节奏紧凑，关键词前置
-
-输入格式：
-我提供了多个视频的信息，每行格式为：序号. 频道名：xxx 标题：xxx 主题：xxx
-
-输出规范（Output Specification）：
-请严格按照以下JSON格式输出，不要添加任何其他文字：
-```json
-[
-    "标题1",
-    "标题2", 
-    "标题3"
-]
-```
-要求：
-1. 输出必须是有效的JSON数组格式
-2. 数组中的每个标题对应输入中相同序号的视频
-3. 标题数量必须与输入数量完全一致
-4. 每个标题单独一行，用双引号包围
-5. 禁止添加解释、注释或其他任何额外字符
-"""
-    
-    data = {
-        "model": API_MODEL,
-        "messages": [
-            {"role": "system", "content": prompt},
-            {"role": "user", "content": batch_input}
-        ],
-    }
-    
+def cover_making(image_path, output_path, translated_text):
     try:
-        response = requests.post(f"{API_BASE_URL}/v1/chat/completions", headers=headers, json=data, timeout=60)
-        response.raise_for_status()
-        result = response.json()["choices"][0]["message"]["content"].strip()
-        print(f"API 批量返回: {result}")
-        
-        # 解析JSON结果
-        # 提取JSON数组部分
-        json_match = re.search(r'\[.*?\]', result, re.DOTALL)
-        if json_match:
-            json_str = json_match.group(0)
-            titles = json.loads(json_str)
-            if isinstance(titles, list) and len(titles) == len(contents):
-                return titles
-            else:
-                print(f"❌ 解析的标题数量不匹配，期望{len(contents)}个，实际{len(titles)}个")
-        else:
-            print("❌ 未能从API返回中提取JSON数组")
-        
-        # 如果解析失败，返回原始文件夹名作为备选
-        return [content['title'] for content in contents]
-        
+        hl_word = get_random_noun_highlight(translated_text)
+        clean_title = re.sub(r'\[.*?\]', '', translated_text)
+
+        bg = Image.open(image_path).convert('RGBA')
+        bg = bg.resize((TARGET_WIDTH, TARGET_HEIGHT), Image.Resampling.LANCZOS)
+        bg = bg.filter(ImageFilter.GaussianBlur(radius=2))
+        overlay = Image.new('RGBA', (TARGET_WIDTH, TARGET_HEIGHT), (0, 0, 0, 60))
+        canvas = Image.alpha_composite(bg, overlay)
+        draw = ImageDraw.Draw(canvas)
+
+        tag_font = ImageFont.truetype(FONT_PATH, 45)
+        tag_text = " 🌐 GLOBAL NEWS • 深度直击 "
+        tag_w = tag_font.getlength(tag_text)
+        draw.rectangle([0, 60, tag_w + 100, 135], fill=RED_ACCENT)
+        draw.text((50, 75), tag_text, font=tag_font, fill="white")
+
+        title_size = 140
+        title_font = ImageFont.truetype(FONT_PATH, title_size)
+        lines = wrap_text_styled(clean_title, title_font, TARGET_WIDTH - 300)
+
+        box_h = title_size + 45
+        line_spacing = 30
+        total_h = len(lines) * box_h + (len(lines)-1) * line_spacing
+        current_y = max(TARGET_HEIGHT - total_h - 130, 220)
+
+        for line in lines:
+            lw = title_font.getlength(line)
+            box_l, box_r = 60, 60 + lw + 100
+            draw.rectangle([box_l, current_y, box_r, current_y + box_h], fill=BG_BOX_COLOR)
+            draw.rectangle([box_l, current_y, box_l + 15, current_y + box_h], fill=RED_ACCENT)
+            draw_text_line_centered(draw, line, title_font, box_l + 45, current_y, box_h, hl_word)
+            current_y += box_h + line_spacing
+
+        canvas.convert('RGB').save(output_path, quality=95)
     except Exception as e:
-        print(f"批量翻译失败: {e}")
-        # 备选方案：返回原始文件夹名
-        return [content['title'] for content in contents]
+        print(f"❌ 封面失败 {image_path}: {e}")
 
-def translate_with_api(text: str) -> str:
-    """保留原有单条翻译函数作为备用"""
-    headers = {
-        "Authorization": f"Bearer {API_KEY}",
-        "Content-Type": "application/json",
-    }
+# ==================== 3. API 翻译逻辑 (已增强) ====================
+#2.  必须包含【频道名】作为信源背书或嘲讽对象（如：MeidasTouch曝猛料 / 福克斯翻车）。
+
+def translate_with_api(text_content: str) -> str:
+    """
+    接收包含 频道名、原标题、Topic 的综合字符串进行处理
+    """
+    headers = {"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json"}
     prompt = """
-角色（Role）：
-你是一名资深国际政治与军事新闻编辑，具备十年以上中美战略议题报道经验，精通美国政治话语体系、国防术语及舆论叙事逻辑，同时深谙中国主流媒体话语风格与受众心理。你擅长将西方信源转化为符合中国立场、兼具专业权威性与大众传播力的新闻标题。
+# Role
 
-任务（Task）：
-基于提供的英文原始内容，生成一条符合中文新闻传播规律的单行标题，用于国内主流资讯平台发布。
+你是一名追求“高信息密度”的B站国际时政区资深编辑。你的核心能力是“降噪”：从冗长的外媒字幕中，提炼出最具体、最反直觉、或最具细节感的逻辑链条，而非简单的概括。
+# Input Data
 
-核心目标（Objective）：
-可以标题党，最大化点击率与用户共鸣，符合40岁以上男性喜好的风格, 标题字数控制在20–35字之间，节奏紧凑，关键词前置
-禁止添加解释、注释、引号或其他任何额外字符
+- 原标题：{folder_name}
+- 讨论主题：{topic_list}
+- 字幕内容：{srt_list}
 
-输出规范（Output Specification）：
-仅输出一行文本，格式为：标题
+# Construction Rules (核心修改点)
+
+1. **拒绝笼统，必须具体（Granularity）：**
+
+   - ❌ 错误：痛斥特朗普的政策很荒谬
+   - ✅ 正确：吐槽特朗普“吸管治国”：为了省水把发型都洗塌了
+   - **指令**：必须从字幕中提取**具体的名词、数据、比喻或特定事件**进标题。
+2. **格式规范：**
+
+   - 格式: 具象化细节/核心逻辑/经典语句.
+   - 仅输出一行，严禁半角符号（: / \ ? * " < > |），字数25-35字。
+
+# Workflow
+1. 分析字幕，找到最具争议或最犀利的一句话。
+2. 输出结果。
+
+# Output Goal
+
+生成一个 **“看了标题就知道视频讲了什么具体事”** 的文件名，而不是笼统的标题党。
 """
     data = {
         "model": API_MODEL,
         "messages": [
             {"role": "system", "content": prompt},
-            {"role": "user", "content": text}
+            {"role": "user", "content": text_content}
         ],
     }
     try:
         response = requests.post(f"{API_BASE_URL}/v1/chat/completions", headers=headers, json=data, timeout=30)
-        response.raise_for_status()
-        result = response.json()["choices"][0]["message"]["content"].strip()
-        print(f"API 返回: {result}")
-        return result
+        return response.json()["choices"][0]["message"]["content"].strip()
     except Exception as e:
-        print(f"翻译失败: {e}")
+        print(f"API Error: {e}")
         return None
 
-# ==================== 文件处理 ====================
-def simple_read_topic(file_path: str) -> list:
-    with open(file_path, 'r', encoding='utf-8') as f:
-        data = json.load(f)
-    return [item['response']['topic'] for item in data if 'response' in item and 'topic' in item['response']]
-
-def find_channel_by_fuzzy_match(excel_path: str, target_title: str, min_similarity=80):
-    try:
-        df = pd.read_excel(excel_path)
-        if 'title' not in df.columns or 'channel_name' not in df.columns:
-            print("⚠️ Excel 缺少 'title' 或 'channel_name' 列")
-            return None
-        best_match, best_score = None, 0
-        for _, row in df.iterrows():
-            current_title = str(row['title'])
-            similarity = fuzz.ratio(target_title.lower(), current_title.lower())
-            if similarity > best_score and similarity >= min_similarity:
-                best_score, best_match = similarity, row['channel_name']
-        if best_match:
-            print(f"✅ 最佳匹配（相似度 {best_score}%）：'{best_match}'")
-            return best_match
-        else:
-            print(f"❌ 未找到 ≥{min_similarity}% 的匹配项")
-            return None
-    except Exception as e:
-        print(f"❌ 匹配出错: {e}")
-        return None
-
-# ==================== 封面生成 ====================
-def cover_making(image_path: str, output_path: str, translated_text: str):
-    try:
-        if not translated_text or not isinstance(translated_text, str):
-            translated_text = os.path.basename(os.path.dirname(image_path))
-
-        background = Image.open(image_path).convert('RGBA')
-        orig_w, orig_h = background.size
-        scale = min(TARGET_WIDTH / orig_w, TARGET_HEIGHT / orig_h)
-        new_w, new_h = int(orig_w * scale), int(orig_h * scale)
-        background = background.resize((new_w, new_h), Image.Resampling.LANCZOS)
-
-        canvas = Image.new('RGBA', (TARGET_WIDTH, TARGET_HEIGHT), (0, 0, 0, 255))
-        paste_x = (TARGET_WIDTH - new_w) // 2
-        paste_y = (TARGET_HEIGHT - new_h) // 2
-        canvas.paste(background, (paste_x, paste_y))
-
-        gradient = create_gradient_overlay(TARGET_WIDTH, TARGET_HEIGHT)
-        canvas = Image.alpha_composite(canvas, gradient)
-        draw = ImageDraw.Draw(canvas)
-
-        # === 中英双语标签 ===
-        try:
-            font_bilingual = ImageFont.truetype(FONT_PATH, 50)
-            text_tag = "中英双语"
-            bbox = draw.textbbox((0, 0), text_tag, font=font_bilingual)
-            x_tag = TARGET_WIDTH - 50 - (bbox[2] - bbox[0])
-            y_tag = 30
-            draw_text_with_effects(
-                draw, text_tag, (x_tag, y_tag), font_bilingual,
-                fill="white", outline_color="black", outline_width=2
-            )
-        except Exception as e:
-            print(f"⚠️ 中英双语标签失败: {e}")
-
-        # === 自适应标题（关键增强）===
-        max_width = TARGET_WIDTH - 120
-        GRADIENT_PERCENT = 0.45
-        gradient_start_y = int(TARGET_HEIGHT * (1 - GRADIENT_PERCENT))
-        gradient_height = TARGET_HEIGHT - gradient_start_y
-        bottom_margin = 50
-        usable_height = gradient_height - bottom_margin
-
-        min_font_size = 40
-        max_font_size = 180
-        final_font = None
-        lines = []
-
-        for fs in range(max_font_size, min_font_size - 1, -2):
-            try:
-                font = ImageFont.truetype(FONT_PATH, fs)
-            except:
-                font = ImageFont.load_default()
-
-            candidate = wrap_text(translated_text, font, max_width)
-            if len(candidate) > 3:
-                candidate = candidate[:3]
-                while len(candidate[2]) > 0 and font.getlength(candidate[2] + "...") > max_width:
-                    candidate[2] = candidate[2][:-1]
-                candidate[2] += "..."
-
-            # compute height
-            try:
-                bbox = font.getbbox("测")
-                line_h = (bbox[3] - bbox[1]) + 12
-            except:
-                line_h = int(fs * 1.2)
-            total_h = len(candidate) * line_h
-
-            if total_h <= usable_height:
-                final_font = font
-                lines = candidate
-                break
-
-        if final_font is None:
-            final_font = ImageFont.truetype(FONT_PATH, min_font_size)
-            lines = wrap_text(translated_text, final_font, max_width)[:3]
-            if lines and len(lines[-1]) > 0:
-                while len(lines[-1]) > 0 and final_font.getlength(lines[-1] + "...") > max_width:
-                    lines[-1] = lines[-1][:-1]
-                lines[-1] += "..."
-
-        # === 计算位置 ===
-        try:
-            bbox = final_font.getbbox("测")
-            line_height = (bbox[3]- bbox[1]) + 12
-        except:
-            line_height = 60
-        total_h = len(lines) * line_height
-
-        if total_h > usable_height:
-            start_y = gradient_start_y + 10
-        else:
-            start_y = gradient_start_y + (usable_height - total_h) // 2
-
-        text_color = random.choice([
-            "#FF1493", "#FFD700", "#FF6347", "#00BFFF", "#32CD32", "#FF4500"
-        ])
-
-        for i, line in enumerate(lines):
-            bbox = draw.textbbox((0, 0), line, font=final_font)
-            x = (TARGET_WIDTH - (bbox[2] - bbox[0])) // 2
-            y = start_y + i * line_height
-            draw_text_with_effects(
-                draw, line, (x, y), final_font,
-                fill=text_color,
-                outline_color="black",
-                outline_width=4,
-                shadow_color=(0, 0, 0, 180)
-            )
-
-        canvas.convert('RGB').save(output_path)
-        print(f"✅ 保存封面: {output_path}")
-
-    except Exception as e:
-        import traceback
-        print(f"❌ 封面失败 {image_path}: {e}")
-        traceback.print_exc()
-
-# ==================== 其余函数（保持不变） ====================
-def send_wechat_notification(free_count, paid_count, titles):
-    SENDKEY = "SCT294207T8J9Mnz8j7lAfG23gPWHT1FZD"
-    if not SENDKEY or SENDKEY == "YOUR_SENDKEY_HERE":
-        print("警告: 未配置 Server酱 SendKey，跳过微信推送。")
-        return
-    title = "YAML 生成完成"
-    desc_parts = [f"已成功生成 YAML 配置文件！\n免费内容: {free_count} 个\n付费内容: {paid_count} 个\n\n--- 生成的标题列表 ---"]
-    for i, t in enumerate(titles, 1):
-        desc_parts.append(f"{i}. {t}")
-    desc_text = "\n".join(desc_parts)
-    url = f"https://sctapi.ftqq.com/{SENDKEY}.send"  # ✅ 修复 URL 空格
-    params = {"title": title, "desp": desc_text}
-    try:
-        response = requests.post(url, data=params, timeout=10)
-        if response.json().get("code") == 0:
-            print("✅ 微信推送成功！")
-        else:
-            print(f"❌ 微信推送失败: {response.json().get('message')}")
-    except Exception as e:
-        print(f"❌ 微信推送异常: {e}")
+# ==================== 4. 业务处理逻辑 (整合了 Topic 和 Channel) ====================
 
 def generate_titles(video_paths: list) -> tuple:
-    """
-    优化的标题生成函数，一次性批量处理所有视频
-    """
-    excel_path = 'tasks_setting.xlsx'
-    batch_contents = []
+    titles, translated_texts = [], []
     
-    # 先收集所有视频信息
+    print(f"🔍 开始生成标题，共 {len(video_paths)} 个视频...")
+    
     for video_path in video_paths:
-        folder_name = os.path.basename(os.path.dirname(video_path))
-        json_path = os.path.join('output', folder_name, 'gpt_log', 'summary.json')
-        topic_list = simple_read_topic(json_path)
-        channel_name = find_channel_by_fuzzy_match(excel_path, folder_name)
+        folder_path = os.path.dirname(video_path)
+        folder_name = os.path.basename(folder_path)
         
-        batch_contents.append({
-            'title': folder_name,
-            'channel_name': channel_name or '未知频道',
-            'topic': ', '.join(topic_list) if topic_list else '无主题'
-        })
-    
-    if not batch_contents:
-        print("❌ 没有找到任何视频信息")
-        return [], []
-    
-    # 批量调用API
-    print(f"🚀 开始批量处理 {len(batch_contents)} 个视频的标题...")
-    translated_texts = batch_translate_with_api(batch_contents)
-    
-    # 生成最终标题
-    month_day = datetime.now().strftime("%m-%d")
-    titles = []
-    
-    for i, (content, translated) in enumerate(zip(batch_contents, translated_texts)):
-        full_title = f"【熟肉】 {translated} | {month_day}"
-        titles.append(full_title)
-        print(f"{i+1}. {full_title}")
-    
+        # --- 整合逻辑开始 ---
+        # 1. 获取 Topic
+        json_path = os.path.join(folder_path, 'gpt_log', 'summary.json')
+        topic_list = simple_read_topic(json_path)
+        srt_path = os.path.join(folder_path, 'trans.srt')
+        srt_list = quick_read_srt(srt_path)
+        #print(srt_list)
+        # 2. 获取 Channel Name
+        channel_name = find_channel_by_fuzzy_match('tasks_setting.xlsx', folder_name) or "精选新闻"
+        
+        # 3. 构造发送给 API 的内容
+        #prompt_content = f"频道名为：{channel_name}\n原标题为:{folder_name}\n内容主题为:{topic_list}完整字幕: {srt_list}"
+        prompt_content = f"频道名为：{channel_name}\n原标题为:{folder_name}\n内容主题为:{topic_list}完整字幕: {srt_list}"
+
+        # print(f"  > 处理: {folder_name} | 频道: {channel_name}")
+        # --- 整合逻辑结束 ---
+
+        # 调用 API
+        translated = translate_with_api(prompt_content) or folder_name
+        
+        # 结果处理
+        translated_texts.append(translated)
+        clean_t = re.sub(r'\[.*?\]', '', translated)
+        
+        # 最终标题加上频道名后缀 (如果需要)
+        final_title = f"[中英]{clean_t}"
+        titles.append(final_title)
+        
+        print(f" ✅ 生成标题: {final_title}")
+
     return titles, translated_texts
 
-def timed_published(videos: list) -> list:
-    video_count = len(videos)
-    days_needed = (video_count // 2) + (1 if video_count % 2 else 0)
-    utc8 = timezone(timedelta(hours=8))
-    start_date = datetime.now(utc8).replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
-    publish_times = []
-    for day in range(days_needed):
-        d = start_date + timedelta(days=day)
-        publish_times.extend([d.replace(hour=8, minute=0), d.replace(hour=9, minute=30)])
-    timestamps = [int(t.timestamp()) for t in publish_times]
-    return timestamps[:video_count]
+# ==================== 配置：文案与标签 (嘲讽/吃瓜风格) ====================
 
-def create_yaml_config(videos, covers, titles, dtimes, yaml_file, is_paid=False):
-    desc = (
-        "本频道致力于分享中英双语的时事内容、热点解读与观点碰撞。\n"
-        "我们希望用更平易近人的方式，一起了解世界，也能为英语学习提供真实有料的素材。\n"
-        "内容仅供学习与交流，请勿过度解读，更不代表任何立场。观点多元，欢迎理性讨论！\n"
-        "视频素材来自公开网络与授权资源，如有侵权请私信或留言联系删除。\n"
-        "如果觉得频道还不错，拜托动动手：点赞、投币、收藏，顺手点个关注！\n"
-        "更希望得到大家的【充电支持】，这是我们持续更新的最大动力！\n\n"
-    )
-    streamers = {}
-    for video, cover, title, dtime in zip(videos, covers, titles, dtimes):
-        entry = {
-            "copyright": 1,
-            "no_reprint": 1,
-            "source": None,
-            "tid": 208,
-            "cover": cover,
-            "title": title,
-            "desc_format_id": 0,
-            "topic_id": 1167972,
-            "topic_detail": {"from_topic_id": 1167972, "from_source": "arc.web.recommend"},
-            "desc": desc,
-            "dolby": 1,
-            "lossless_music": 1,
-            "tag": TAG[0],
-            "dynamic": "",
-            "dtime": None,
-            "open-elec": 1,
-        }
-        if is_paid:
-            entry.update({
-                "charging_pay": 1,
-                "preview": {"need_preview": 1, "start_time": 0, "end_time": 2},
-                "upower_level_id": "1212996740244948080",
-                "upower_mode": 0,
-                "upower_unit_price": 0,
-            })
-        streamers[video] = entry
-    data = {"submit": "App", "streamers": streamers}
-    with open(yaml_file, 'w', encoding='utf-8') as f:
-        yaml.dump(data, f, allow_unicode=True, sort_keys=False)
-    print(f"✅ YAML 已保存: {yaml_file}")
+# 简介模板库（随机抽取，保持新鲜感，避免查重）
+DESC_TEMPLATES = [
+    """【中英双语】带你看懂美式“民主”的翻车现场 🤡
+👉 挖掘美媒内讧实录，直击两党“互咬”最前线。
+🚫 拒绝西方滤镜，还原最真实的美国。
+---------------------------------------
+📢 声明：视频素材源自外网，仅供批判性研究与语言学习。
+🔥 每日更新美帝荒诞事，喜欢请【点赞+投币】支持，这对我真的很重要！""",
 
-def split_and_create_yaml(videos, covers, titles, dtimes, paid_ratio=0.3):
+    """⚡️ 高能预警：美式政坛大型“双标”与“破防”现场
+不仅是英语听力素材，更是观察西方社会撕裂的绝佳窗口。
+看懂王（川普）如何整活，看自由派如何无能狂怒。
+---------------------------------------
+💡 关注频道，每天三分钟，用吃瓜的心态看世界。
+✨ 你的【一键三连】是更新的最大动力！""",
+
+    """🇺🇸 欢迎来到“自由美利坚”的魔幻现实主义片场。
+这里有最犀利的媒体吐槽，最直接的政客互怼。
+中英双语字幕精校，确保你不错过每一个“名场面”。
+---------------------------------------
+🎯 核心看点：特朗普 | 共和党内乱 | 媒体揭秘
+💬 评论区以此为据，欢迎各路大神指点江山。
+❤️ 觉得有意思请长按点赞，感谢支持！"""
+]
+
+# 补充标签（高热度关键词）
+EXTRA_TAGS = "特朗普,美国大选,共和党,民主党,美式笑话,双语字幕,听力,国际时事,吃瓜"
+
+# ==================== 核心逻辑：YAML 生成 ====================
+
+def split_and_create_yaml(videos, covers, titles, dtimes, paid_ratio=0.1):
+    """
+    将视频列表随机划分为免费/付费内容，并生成对应的上传 YAML 配置文件
+    """
     total = len(videos)
     indices = list(range(total))
-    random.shuffle(indices)
+    random.shuffle(indices) # 打乱顺序
+    
+    # 计算分割点
     split_point = int(total * (1 - paid_ratio))
-    free_idx = indices[:split_point]
-    paid_idx = indices[split_point:]
-    create_yaml_config([videos[i] for i in free_idx], [covers[i] for i in free_idx],
-                       [titles[i] for i in free_idx], dtimes, 'free_content.yaml', is_paid=False)
-    create_yaml_config([videos[i] for i in paid_idx], [covers[i] for i in paid_idx],
-                       [titles[i] for i in paid_idx], dtimes, 'paid_content.yaml', is_paid=True)
+    
+    # --- 内部函数：写入 YAML ---
+    def write_yaml(sub_v, sub_c, sub_t, sub_dt, filename, is_paid):
+        streamers = {}
+        
+        for i, (v, c, t, dt) in enumerate(zip(sub_v, sub_c, sub_t, sub_dt)):
+            # 1. 随机选择简介模板
+            base_desc = random.choice(DESC_TEMPLATES)
+            
+            # 2. 组合最终简介 (将标题放在第一行，利于 SEO 和用户快速预览)
+            final_desc = f"► 本期看点：{t}\n\n{base_desc}"
+            
+            # 3. 处理标签 (合并 Global TAG 和 EXTRA_TAGS)
+            # 假设全局 TAG[0] 是类似 "每日英语新闻,..." 的字符串
+            base_tag = TAG[0] if (type(TAG) is list and len(TAG) > 0) else ""
+            combined_tag = f"{base_tag},{EXTRA_TAGS}"
+            
+            # 去重、去空、限制数量 (B站限制标签数，通常取前12个)
+            tag_list = list(set([x.strip() for x in combined_tag.split(',') if x.strip()]))
+            final_tag = ",".join(tag_list[:12])
 
-def find_output_with_sub_files(directory: str) -> list:
-    return [
-        os.path.join(root, file)
-        for root, _, files in os.walk(directory)
-        for file in files
-        if file == 'output_sub.mp4'
-    ]
+            # 4. 构造单个视频的配置项
+            entry = {
+                "copyright": 1,           # 1=自制 (翻译二创通常投自制)
+                "source": None,           # 自制无需 source
+                "tid": 208,               # 分区ID (208=资讯-环球/时政，请根据需要调整)
+                "cover": c, 
+                "title": t,
+                "desc": final_desc,
+                "tag": final_tag,
+                "dtime": dt,              # 定时发布时间戳
+                "open-elec": 1,           # 开启充电
+            }
+            
+            # 如果是付费内容，添加付费字段
+            if is_paid:
+                entry.update({
+                    "charging_pay": 1, 
+                    "upower_level_id": "1212996740244948080" # 🔴 请确认这是您的充电计划 ID
+                })
+                
+            streamers[v] = entry
 
-# ==================== 主程序 ====================
+        # 5. 写入文件
+        try:
+            with open(filename, 'w', encoding='utf-8') as f:
+                # allow_unicode=True 保证中文正常显示，sort_keys=False 保持字段顺序
+                yaml.dump({"submit": "App", "streamers": streamers}, f, allow_unicode=True, sort_keys=False)
+            print(f"📄 已生成配置文件: {filename} (包含 {len(sub_v)} 个视频)")
+        except Exception as e:
+            print(f"❌ 写入 YAML 失败 ({filename}): {e}")
+
+    # --- 执行分割与写入 ---
+    
+    # 划分索引
+    f_idx = indices[:split_point] # 免费部分索引
+    p_idx = indices[split_point:] # 付费部分索引
+    
+    # 生成免费内容的 YAML
+    write_yaml(
+        [videos[i] for i in f_idx], 
+        [covers[i] for i in f_idx], 
+        [titles[i] for i in f_idx], 
+        [dtimes[i] for i in f_idx], 
+        'free_content.yaml', 
+        False
+    )
+    
+    # 生成付费内容的 YAML (如果有的话)
+    if p_idx:
+        write_yaml(
+            [videos[i] for i in p_idx], 
+            [covers[i] for i in p_idx], 
+            [titles[i] for i in p_idx], 
+            [dtimes[i] for i in p_idx], 
+            'paid_content.yaml', 
+            True
+        )
+# ==================== 5. 主程序 ====================
+
 def main():
-    if os.path.exists(error_dir):
-        shutil.rmtree(error_dir)
-        print(f"已清理 {error_dir}")
-
-    covers = find_files_with_suffix(OUTPUT_DIR, COVER_SUFFIX)
-    videos = find_output_with_sub_files(OUTPUT_DIR)
-    #videos = videos[0:2]
+    # 查找视频
+    videos = []
+    for root, _, files in os.walk(OUTPUT_DIR):
+        if 'output_sub.mp4' in files:
+            videos.append(os.path.join(root, 'output_sub.mp4'))
+    
     if not videos:
-        print("❌ 未找到任何视频文件")
+        print("❌ 未发现 output_sub.mp4 文件")
         return
 
-    dtimes = timed_published(videos)
-    titles, translated_texts = generate_titles(videos)
+    # 1. 标题与翻译 (核心逻辑已更新)
+    bilibili_titles, translated_raw = generate_titles(videos)
+    
+    # 2. 定时发布时间 (明天开始，每隔1.5小时一个)
+    start_time = datetime.now(timezone(timedelta(hours=8))).replace(hour=8, minute=0, second=0) + timedelta(days=1)
+    dtimes = [int((start_time + timedelta(minutes=45*i)).timestamp()) for i in range(len(videos))]
 
-    for cover, translated in tqdm(zip(covers, translated_texts), total=len(covers), desc="生成封面"):
-        cover_dir = os.path.dirname(cover)
-        new_name = os.path.basename(cover).replace(COVER_SUFFIX, NEW_COVER_SUFFIX)
-        output_path = os.path.join(cover_dir, new_name)
-        clean_translated = translated.split('‖')[0] if translated else cover_dir
-        cover_making(cover, output_path, clean_translated)
+    # 3. 处理封面
+    new_covers = []
+    for vid, trans in tqdm(zip(videos, translated_raw), total=len(videos), desc="生成封面"):
+        folder = os.path.dirname(vid)
+        # 寻找原图
+        raw_jpg = next((os.path.join(folder, f) for f in os.listdir(folder) if f.endswith('.jpg')), None)
+        if raw_jpg:
+            new_c = raw_jpg.replace('.jpg', NEW_COVER_SUFFIX)
+            cover_making(raw_jpg, new_c, trans)
+            new_covers.append(new_c)
+        else:
+            new_covers.append("") # 占位
 
-    new_covers = find_files_with_suffix(OUTPUT_DIR, NEW_COVER_SUFFIX)
-    assert len(new_covers) == len(videos) == len(titles), "文件数量不一致！"
-
-    paid_ratio = 0.3
-    total_videos = len(videos)
-    paid_count = int(total_videos * paid_ratio)
-    free_count = total_videos - paid_count
-    split_and_create_yaml(videos, new_covers, titles, dtimes, paid_ratio=paid_ratio)
-
-    #send_wechat_notification(free_count, paid_count, translated_texts)
+    # 4. 生成 YAML
+    split_and_create_yaml(videos, new_covers, bilibili_titles, dtimes)
+    print("✨ 全部流程完成，YAML 已生成。")
 
 if __name__ == "__main__":
     main()

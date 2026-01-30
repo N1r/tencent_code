@@ -26,6 +26,7 @@ API_KEY = 'sk-2hQb4lo4JuCdWWCflcN41jddIIQzhtSi78Qeb7vWOM40XSkJ'
 API_BASE_URL = 'https://api.302.ai'  # ✅ 修复尾部空格
 #API_MODEL = 'sophnet/DeepSeek-V3.2'
 API_MODEL = 'gemini-2.5-flash-lite-preview-09-2025'
+#API_MODEL = 'grok-4-1-fast-non-reasoning'
 # 自动选择字体
 def get_font_path():
     possible_fonts = [
@@ -104,14 +105,14 @@ def translate_with_api(text: str) -> str:
 你是一名资深国际政治与军事新闻编辑，具备十年以上中美战略议题报道经验，精通美国政治话语体系、国防术语及舆论叙事逻辑，同时深谙中国主流媒体话语风格与受众心理。你擅长将西方信源转化为符合中国立场、兼具专业权威性与大众传播力的新闻标题。
 
 任务（Task）：
-基于提供的英文原始内容，生成一条符合中文新闻传播规律的单行标题，用于国内主流资讯平台发布。
+基于提供的英文原始内容，提取频道名,生成一条符合中文新闻传播规律的单行标题，用于国内主流资讯平台发布。
 
 核心目标（Objective）：
-信息量大, 尽可能标题党，最大化点击率与用户共鸣，符合50岁以上男性喜好的风格, 标题字数控制在25字左右, 节奏紧凑，关键词前置
+信息量大, 尽可能标题党，最大化点击率与用户共鸣，符合40岁以上男性喜好的风格, 标题字数控制在15字左右, 节奏紧凑，关键词前置
 禁止添加解释、注释、引号或其他任何额外字符
 
 输出规范（Output Specification）：
-仅输出一行文本，格式为：标题
+仅输出一行文本，格式为：[频道名]标题
 """
     data = {
         "model": API_MODEL,
@@ -311,7 +312,7 @@ def generate_titles(video_paths: list) -> tuple:
         translated = translate_with_api(content) or folder_name
         translated_texts.append(translated)
         month_day = datetime.now().strftime("%m-%d")
-        full_title = f"【熟肉】 {translated} | 双语精校| 每日新闻 "
+        full_title = f"{translated} | 双语精校 | 每日新闻 "
         titles.append(full_title)
         print(full_title)
     return titles, translated_texts

@@ -17,3 +17,5 @@
 *.tmp
 *.bak
 ./logs/*
+client_secrets.json
+*.pickle
