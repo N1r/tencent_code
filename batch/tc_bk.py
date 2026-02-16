@@ -12,6 +12,9 @@ import os
 # 自动检测操作系统和浏览器路径
 SYSTEM = platform.system()
 
+import functools
+print = functools.partial(print, flush=True)
+
 # 根据操作系统设置默认浏览器路径
 if SYSTEM == "Linux":
     # Linux 服务器通常使用系统安装的 chromium
@@ -24,12 +27,12 @@ else:  # Windows
 # 可以通过环境变量覆盖浏览器路径
 if os.getenv("CHROME_PATH"):
     LOCAL_EXECUTABLE_PATH = os.getenv("CHROME_PATH")
-
 # 文件路径配置
 # 文件路径配置
 FOLDER_PATH = Path("output/moved_files")
 COVER_FOLDER_PATH = Path("output/moved_files")
 COOKIES_FILE = Path("tc_cookies.json")
+
 
 # 无头模式配置（True=无头模式，False=显示浏览器）
 #HEADLESS_MODE = os.getenv("HEADLESS", "false").lower() == "true"
@@ -40,6 +43,18 @@ MIN_COVER_WIDTH = 752
 MIN_COVER_HEIGHT = 360
 
 # ==================== 工具函数 ====================
+
+# ==================== 工具函数 ====================
+async def save_error_screenshot(page, video_name):
+    """保存错误截图"""
+    try:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        screenshot_path = f"error_{timestamp}_{video_name}.png"
+        await page.screenshot(path=screenshot_path, full_page=True)
+        print(f"📸 已保存错误截图至: {screenshot_path}")
+    except Exception as e:
+        print(f"⚠️ 无法保存截图: {e}")
+        
 async def human_sleep(min_seconds=1, max_seconds=3):
     """模拟人类操作的随机等待"""
     t = random.uniform(min_seconds, max_seconds)
@@ -141,184 +156,112 @@ async def validate_cookies(page):
         print(f"⚠️ 验证 cookies 时出错: {e}")
         return False
 
-async def wait_for_video_upload_success(page, timeout=300000):
-    """等待视频上传成功，支持多种成功标识"""
-    print("⏳ 等待视频上传成功...")
-    
-    # 可能的成功提示文本
-    success_indicators = [
-        "视频上传成功",
-        "上传成功", 
-        "视频大小",
-        "视频时长",
-    ]
-    
-    try:
-        # 方法1: 等待任意一个成功提示出现
-        for indicator in success_indicators:
-            try:
-                locator = page.locator(f"text={indicator}")
-                await locator.wait_for(state="visible", timeout=5000)
-                print(f"✓ 检测到上传成功标识: '{indicator}'")
-                return True
-            except:
-                continue
-        
-        # 方法2: 如果上面都没找到，检查是否有视频信息区域
-        try:
-            # 等待视频信息容器出现（通常包含视频大小、时长等）
-            video_info = page.locator(".video-info, .upload-info, [class*='video'][class*='info']").first
-            await video_info.wait_for(state="visible", timeout=10000)
-            
-            # 获取文本内容检查
-            info_text = await video_info.inner_text()
-            if "MB" in info_text or "分" in info_text or "秒" in info_text:
-                print(f"✓ 检测到视频信息: {info_text[:50]}...")
-                return True
-        except:
-            pass
-        
-        # 方法3: 检查进度条是否消失（上传完成）
-        try:
-            progress_bar = page.locator("[class*='progress'], .ant-progress, [role='progressbar']").first
-            await progress_bar.wait_for(state="hidden", timeout=timeout)
-            print("✓ 上传进度条已消失")
-            
-            # 再等待2秒确保处理完成
-            await asyncio.sleep(2)
-            return True
-        except:
-            pass
-        
-        print("❌ 未能检测到明确的上传成功标识")
-        return False
-        
-    except Exception as e:
-        print(f"❌ 等待上传成功时出错: {type(e).__name__}: {e}")
-        return False
-
 
 async def upload_single_video(context, video_path, cover_path):
     """上传单个视频（每次创建新页面避免内存累积）"""
     print(f"\n🚀 准备上传: {video_path.name}")
-    print(f"📁 视频路径: {video_path}")
-    print(f"🖼️ 封面路径: {cover_path}")
-    
+
     # 每次上传创建新页面，避免内存累积
     page = await context.new_page()
-    
+
     try:
         # 打开上传页面
-        print("🌐 正在打开上传页面...")
         await page.goto("https://shizi.qq.com/creation/video")
-        print("✓ 页面加载完成")
-        
-        print("🔍 等待上传按钮出现...")
         await page.get_by_role("button", name="本地上传").wait_for(state="visible")
-        print("✓ 上传按钮已就绪")
-        
         await human_sleep(2, 4)
-        
+
         # 上传视频
-        print(f"📤 开始上传视频文件...")
         video_input = page.locator("input[type='file'][accept^='video']")
         await video_input.wait_for(state="attached")
-        print("✓ 找到视频上传输入框")
-        
         await video_input.set_input_files(str(video_path))
-        print(f"✓ 视频文件已选择，开始上传...")
-        
-        # 等待上传开始（进度条出现）
-        try:
-            await page.locator("[class*='progress'], .ant-progress").first.wait_for(state="visible", timeout=10000)
-            print("✓ 上传已开始，进度条已出现")
-        except:
-            print("⚠️ 未检测到进度条，继续等待...")
-        
+
         # 等待视频上传成功
-        if not await wait_for_video_upload_success(page, timeout=300000):
-            print("❌ 视频上传可能失败")
-            # 保存当前页面状态用于调试
-            try:
-                await page.screenshot(path=f"upload_status_{video_path.stem}.png")
-                page_content = await page.content()
-                with open(f"upload_page_{video_path.stem}.html", "w", encoding="utf-8") as f:
-                    f.write(page_content)
-                print("📸 已保存页面截图和HTML用于调试")
-            except:
-                pass
-            return False
-        
+        await page.locator("text=视频上传成功").wait_for(state="visible")
         print(f"✅ 视频上传成功: {video_path.name}")
         await human_sleep(1, 2)
-        
+
         # 上传封面
-        print("🖼️ 开始上传封面...")
         if not await upload_cover(page, cover_path):
-            print("❌ 封面上传失败")
             return False
         print(f"✅ 封面上传成功: {cover_path.name}")
-        
+
         # 裁剪封面
-        print("✂️ 开始裁剪封面...")
         if not await process_cover_crop(page):
-            print("❌ 封面裁剪失败")
             return False
-        print("✅ 封面裁剪完成")
         await human_sleep(1, 2)
-        
+
         # 声明原创
-        print("📝 声明原创...")
         await page.get_by_text("声明原创").click()
-        print("✓ 已点击'声明原创'")
-        
         await page.get_by_text("该视频非AI生成").click()
-        print("✓ 已点击'该视频非AI生成'")
         print("✅ 原创声明完成")
         await human_sleep(1, 2)
-        
+
         # 发布视频
-        print("🚀 准备发布视频...")
         await page.get_by_role("button", name="发 布").click()
-        print("✓ 第一次点击发布")
         await human_sleep(0.5, 1)
-        
         await page.get_by_role("button", name="发 布").click()
-        print("✓ 第二次点击发布")
+
         print("✅ 发布成功！")
-        
         await human_sleep(3, 6)
+
         return True
-        
+
     except Exception as e:
-        print(f"❌ 上传失败: {video_path.name}")
-        print(f"💥 错误详情: {type(e).__name__}: {e}")
-        
-        # 保存错误截图和页面内容
-        try:
-            screenshot_path = f"error_{video_path.stem}.png"
-            await page.screenshot(path=screenshot_path)
-            print(f"📸 错误截图已保存: {screenshot_path}")
-            
-            # 保存页面HTML用于调试
-            page_content = await page.content()
-            html_path = f"error_{video_path.stem}.html"
-            with open(html_path, "w", encoding="utf-8") as f:
-                f.write(page_content)
-            print(f"📄 页面HTML已保存: {html_path}")
-        except:
-            pass
-            
+        print(f"❌ 上传失败: {video_path.name}, 错误: {e}")
         return False
-        
+
     finally:
         # 关闭页面释放内存
-        print("🧹 清理页面资源...")
         try:
             await page.close()
-            print("✓ 页面已关闭")
         except:
             pass
+
+
+# ==================== 浏览器管理 ====================
+def get_launch_options():
+    """获取浏览器启动参数"""
+    launch_options = {
+        "headless": HEADLESS_MODE,
+    }
+
+    if LOCAL_EXECUTABLE_PATH:
+        launch_options["executable_path"] = LOCAL_EXECUTABLE_PATH
+
+    # Linux 无头模式需要额外参数（内存优化）
+    if SYSTEM == "Linux":
+        launch_options["args"] = [
+            "--no-sandbox",
+            "--disable-setuid-sandbox",
+            "--disable-dev-shm-usage",
+            "--disable-gpu",
+            # 内存优化参数
+            "--disable-extensions",
+            "--disable-background-networking",
+            "--disable-default-apps",
+            "--disable-sync",
+            "--disable-translate",
+            "--mute-audio",
+            "--no-first-run",
+            "--safebrowsing-disable-auto-update",
+            "--js-flags=--max-old-space-size=512",
+        ]
+
+    return launch_options
+
+
+async def create_browser_context(p, cookies):
+    """创建浏览器和上下文"""
+    launch_options = get_launch_options()
+    browser = await p.chromium.launch(**launch_options)
+    context = await browser.new_context()
+    context.set_default_timeout(0)
+
+    if cookies:
+        await context.add_cookies(cookies)
+
+    return browser, context
+
 
 # ==================== 主函数 ====================
 async def main():
@@ -330,65 +273,68 @@ async def main():
         return
 
     print(f"📊 找到 {len(videos)} 个视频文件")
+    print(f"🖥️  系统: {SYSTEM}")
+    print(f"🌐 无头模式: {HEADLESS_MODE}")
 
-    # 初始化浏览器
+    # 加载 cookies
+    cookies = None
+    if COOKIES_FILE.exists():
+        cookies = json.loads(COOKIES_FILE.read_text())
+        print("✅ Cookies 加载成功")
+    else:
+        print("⚠️ cookies.txt 不存在，可能需要先登录")
+        return
+
     async with async_playwright() as p:
-        # 浏览器启动参数
-        launch_options = {
-            "headless": HEADLESS_MODE,
-        }
-
-        # 只在指定了路径时才添加 executable_path
-        if LOCAL_EXECUTABLE_PATH:
-            launch_options["executable_path"] = LOCAL_EXECUTABLE_PATH
-
-        # Linux 无头模式需要额外参数
-        if SYSTEM == "Linux":
-            launch_options["args"] = [
-                "--no-sandbox",
-                "--disable-setuid-sandbox",
-                "--disable-dev-shm-usage",
-                "--disable-gpu"
-            ]
-
-        print(f"🖥️  系统: {SYSTEM}")
-        print(f"🌐 无头模式: {HEADLESS_MODE}")
-
-        browser = await p.chromium.launch(**launch_options)
-        context = await browser.new_context()
-        context.set_default_timeout(0)
-
-        # 加载 cookies
-        if COOKIES_FILE.exists():
-            cookies = json.loads(COOKIES_FILE.read_text())
-            await context.add_cookies(cookies)
-            print("✅ Cookies 加载成功")
-        else:
-            print("⚠️ cookies.json 不存在，可能需要先登录")
-
-        page = await context.new_page()
+        browser, context = await create_browser_context(p, cookies)
 
         # 验证 cookies 有效性
-        if not await validate_cookies(page):
+        test_page = await context.new_page()
+        if not await validate_cookies(test_page):
             print("\n❌ Cookies 验证失败，请先运行登录脚本获取有效的 cookies")
             await browser.close()
             return
+        await test_page.close()
 
         # 上传每个视频
         success_count = 0
-        for video_path in videos:
+        for i, video_path in enumerate(videos):
             # 查找对应封面
             cover_path = find_cover_for_video(video_path, COVER_FOLDER_PATH)
             if not cover_path:
                 print(f"⚠️ 未找到合适的封面，跳过: {video_path.name}")
                 continue
 
-            # 上传视频
-            if await upload_single_video(page, video_path, cover_path):
-                success_count += 1
+            # 尝试上传，如果浏览器崩溃则重启
+            max_retries = 2
+            for retry in range(max_retries):
+                try:
+                    if await upload_single_video(context, video_path, cover_path):
+                        success_count += 1
+                    break
+                except Exception as e:
+                    if "closed" in str(e).lower() or "crashed" in str(e).lower():
+                        print(f"🔄 浏览器崩溃，正在重启... (重试 {retry + 1}/{max_retries})")
+                        try:
+                            await browser.close()
+                        except:
+                            pass
+                        await asyncio.sleep(3)
+                        browser, context = await create_browser_context(p, cookies)
+                    else:
+                        print(f"❌ 上传出错: {e}")
+                        break
+
+            # 每上传一个视频后，等待一下让系统回收内存
+            if i < len(videos) - 1:
+                print("⏳ 等待系统回收内存...")
+                await asyncio.sleep(5)
 
         print(f"\n📊 上传完成！成功: {success_count}/{len(videos)}")
-        await browser.close()
+        try:
+            await browser.close()
+        except:
+            pass
 
 
 if __name__ == "__main__":

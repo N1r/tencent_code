@@ -1,76 +1,95 @@
 import asyncio
 import aiohttp
 import pandas as pd
-from typing import List, Dict, Any, Optional
-from dataclasses import dataclass, field
-from tqdm.asyncio import tqdm
+import re
 import os
 import platform
-import random
-from datetime import datetime
-import logging
+import time
+from typing import List, Dict, Optional
+from dataclasses import dataclass, field
+from tqdm.asyncio import tqdm
+from colorama import init, Fore, Style
+from tabulate import tabulate
+
+# ============= 0. 初始化与美化工具 =============
+
+init(autoreset=True)
+
+class Printer:
+    """负责美观的控制台输出"""
+    @staticmethod
+    def header(msg):
+        print(f"\n{Fore.MAGENTA}{'='*50}\n   {msg}\n{'='*50}{Style.RESET_ALL}")
+
+    @staticmethod
+    def info(msg):
+        tqdm.write(f"{Fore.CYAN}ℹ️  {msg}{Style.RESET_ALL}")
+
+    @staticmethod
+    def success(msg):
+        tqdm.write(f"{Fore.GREEN}✅ {msg}{Style.RESET_ALL}")
+
+    @staticmethod
+    def warn(msg):
+        tqdm.write(f"{Fore.YELLOW}⚠️  {msg}{Style.RESET_ALL}")
+
+    @staticmethod
+    def error(msg):
+        tqdm.write(f"{Fore.RED}❌ {msg}{Style.RESET_ALL}")
+
+    @staticmethod
+    def channel_result(name, count, target):
+        color = Fore.GREEN if count >= target else (Fore.YELLOW if count > 0 else Fore.LIGHTBLACK_EX)
+        tqdm.write(f"   └── {color}获取 {count:>2}/{target} 个视频{Style.RESET_ALL} | {name}")
 
 # ============= 1. 配置区域 =============
 
-# 配置日志
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
-
 CONFIG = {
-    'API_KEY': 'AIzaSyDMVvDeq4xHWFpTh5hGRiZoBettBqrSbcs', # 请确保您的 API Key 有效
+    # ⚠️ 替换 API Key
+    'API_KEY': 'AIzaSyDMVvDeq4xHWFpTh5hGRiZoBettBqrSbcs', 
+    
     'CHANNELS': {                                             
-      #'MeidasTouch': 'UC9r9HYFxEQOBXSopFS61ZWg',            
-      #'CNN': 'UCupvZG-5ko_eiXAupbDfxWw',                    
-      #'Fox News': 'UCXIJgqnII2ZOINSWNOGFThA',               
-      #'The Hill': 'UCPWXiRWZ29zrxPFIQT7eHSA',               
-      #'Forbes Breaking News': 'UCg40OxZ1GYh3u3jBntB6DLg',   
-      #'Congress Clips': 'UUJQFbOJfbN6ZjJ3R5AvxNyg',         
-      #'Benny Johnson': 'UULdP3jmBYe9lAZQbY6OSYjw',          
       'The David Pakman Show': 'UCvixJtaXuNdMPUGdOPcY8Ag',  
-      #'Associated Press': 'UC52X5wxOL_s5yw0dQk7NtgA',  
-      "APT News": "UCpLEtz3H0jSfEneSdf1YKnw",
+      #"APT News": "UCpLEtz3H0jSfEneSdf1YKnw",
       "DRM News International":"UCrvG04V6wbOau6fVJI01OlQ", 
-      #'MS NOW': 'UCaXkIU1QidjPwiAYu6GcHjg',                 
-      #'Global News': 'UChLtXXpo4Ge1ReTEboVvTDg',
-      "南华早报": "UC4SUWizzKc1tptprBkWjX2Q",
-      #"TBS NEWS DIG" : "UC6AG81pAkf6Lbi_1VC5NmPA",
-      #"The Dodo":"UCINb0wqPz-A0dV9nARjJlOQ",      
-      #'Luke Beasley': 'UCM05jgFNwoeXvWfO9GuExzA',           
-      #'Jimmy Kimmel Live': 'UCa6vGFO9ty8v5KZJXQxdhaw',      
-      #'The Economist': 'UC0p5jTq6Xx_DosDFxVXnWaQ',          
-      #'The Daily Show': 'UCwWhs_6x42TyRM4Wstoq8HA',         
-      #'Tucker Carlson': 'UCxwubvG70lardn6CkfVdnSw',          # 175万订阅，保守派
-      'BTC': 'UCQANb2YPwAtK-IQJrLaaUFw',                      # Brian Tyler Cohen，左翼
-      #'The Stephen A. Smith Show': 'UU2OREBiIbDChxvmDeg30Bsg',  # 原ID: UC2OREBiIbDChxvmDeg30Bsg
+      #"南华早报": "UC4SUWizzKc1tptprBkWjX2Q",
+      'BTC': 'UCQANb2YPwAtK-IQJrLaaUFw',
+     # 'NBC News': 'UCeY0bbntWzzVIaj2z3QigXg',                # 1140万订阅
+     # 'CNN': 'UCupvZG-5ko_eiXAupbDfxWw',                      # 1890万订阅
+     # 'Fox News': 'UCXIJgqnII2ZOINSWNOGFThA',                # 1240万订阅
+      # 'ABC News': 'UCBi2mrWuNuyYy4gbM6fU18Q',                # 1780万订阅
+
     },
-    # Shorts 更新频率快，建议单频道检索量加大
-    'MAX_RESULTS_PER_CHANNEL': 15, 
+
+    # ✅ 核心配置：每个频道获取最新的多少个？
+    'FETCH_LIMIT': 15, 
     
+    # ⏱️ 时长过滤器 (单位: 秒)
+    # 设定你需要的范围，程序会获取在这个范围内的最新视频
     'VIDEO_FILTERS': {
-        'MIN_DURATION': 150,      # 至少5秒
-        'MAX_DURATION': 450,     # 【关键】YouTube Shorts 严格限制在 60 秒以内
-        'MIN_VIEWS': 5000,      # Shorts 播放量基数通常较大，可适当调高
-        'MIN_COMMENTS': 1      # 互动过滤
+        'MIN_DURATION': 60,      # 最小 60 秒
+        'MAX_DURATION': 350,    # 最大 20 分钟
     },
     
-    'SELECTION': {
-        'NUM_CHANNELS': 10,                    
-        'VIDEOS_PER_CHANNEL_MIN': 1,          
-        'VIDEOS_PER_CHANNEL_MAX': 3,          # 每个频道多选几个，Shorts 消耗快
-        'TOP_N_CANDIDATES': 10,                # 从评论数前10名中筛选
-    }
+    'OUTPUT_FILE': 'batch/tasks_setting.xlsx',
+    'CONCURRENT_LIMIT': 5 
 }
 
-# ============= 2. 数据模型与 API 类 =============
+COLUMNS = [
+    'Video File', 'title', 'rawtext', 'translated_text', 
+    'Publish Date', 'Replies', 'Reposts', 'viewCount', 
+    'channel_name', 'duration', 'Source Language', 
+    'Target Language', 'Dubbing', 'Status'
+]
+
+# ============= 2. API 交互逻辑 =============
 
 @dataclass
 class YouTubeConfig:
     API_KEY: str = CONFIG['API_KEY']
     BASE_URL: str = "https://www.googleapis.com/youtube/v3"
-    MAX_RESULTS: int = CONFIG['MAX_RESULTS_PER_CHANNEL']
+    # 多抓取一点做 Buffer，防止前10个里有不符合时长的
+    MAX_RESULTS: int = CONFIG['FETCH_LIMIT'] + 10 
     VIDEO_FILTERS: dict = field(default_factory=lambda: CONFIG['VIDEO_FILTERS'])
     MAX_RETRIES: int = 3
     RETRY_DELAY: float = 2.0
@@ -79,6 +98,7 @@ class YouTubeAPI:
     def __init__(self, config: YouTubeConfig):
         self.config = config
         self.session: Optional[aiohttp.ClientSession] = None
+        self.semaphore = asyncio.Semaphore(CONFIG['CONCURRENT_LIMIT'])
 
     async def __aenter__(self):
         timeout = aiohttp.ClientTimeout(total=30)
@@ -92,41 +112,43 @@ class YouTubeAPI:
             self.session = None
 
     async def _make_request(self, url: str, params: dict = None) -> Optional[dict]:
-        for attempt in range(self.config.MAX_RETRIES):
-            try:
-                async with self.session.get(url, params=params) as response:
-                    if response.status == 200:
-                        return await response.json()
-                    elif response.status == 403:
-                        logger.error("API 额度超限或 Key 无效")
-                        return None
-            except Exception as e:
-                logger.error(f"请求失败: {e}")
-            await asyncio.sleep(self.config.RETRY_DELAY * (attempt + 1))
-        return None
+        async with self.semaphore:
+            for attempt in range(self.config.MAX_RETRIES):
+                try:
+                    async with self.session.get(url, params=params) as response:
+                        if response.status == 200:
+                            return await response.json()
+                        elif response.status in [403, 404]:
+                            return None
+                except Exception:
+                    pass
+                await asyncio.sleep(self.config.RETRY_DELAY * (attempt + 1))
+            return None
 
-    async def get_latest_videos(self, channel_id: str, channel_name: str, max_results: int = 20) -> List[Dict]:
-        """获取频道最新 Shorts"""
-        logger.info(f"正在从频道抓取 Shorts: {channel_name}")
+    async def get_latest_videos(self, channel_id: str, channel_name: str) -> List[Dict]:
+        """获取视频，严格按照时间倒序，取前N个符合条件的"""
         
-        # 第一步：搜索（使用 videoDuration='short' 过滤 4 分钟以下视频）
+        # 1. 搜索
         search_params = {
             "part": "snippet",
             "channelId": channel_id,
-            "order": "date",
-            "maxResults": max_results,
+            "order": "date", # 严格按日期倒序
+            "maxResults": self.config.MAX_RESULTS,
             "type": "video",
             "key": self.config.API_KEY
         }
         
         search_data = await self._make_request(f"{self.config.BASE_URL}/search", search_params)
         if not search_data or 'items' not in search_data:
+            Printer.channel_result(channel_name, 0, CONFIG['FETCH_LIMIT'])
             return []
 
         video_ids = [item['id']['videoId'] for item in search_data['items']]
-        if not video_ids: return []
+        if not video_ids: 
+            Printer.channel_result(channel_name, 0, CONFIG['FETCH_LIMIT'])
+            return []
 
-        # 第二步：获取详细统计信息
+        # 2. 详情 (获取时长)
         videos_params = {
             "part": "snippet,contentDetails,statistics",
             "id": ",".join(video_ids),
@@ -135,129 +157,190 @@ class YouTubeAPI:
 
         videos_data = await self._make_request(f"{self.config.BASE_URL}/videos", videos_params)
         if not videos_data or 'items' not in videos_data:
+            Printer.channel_result(channel_name, 0, CONFIG['FETCH_LIMIT'])
             return []
 
+        # 3. 过滤并截取前 N 个
         valid_videos = []
-        for item in videos_data['items']:
+        limit = CONFIG['FETCH_LIMIT']
+
+        # 注意：API 返回的顺序可能在批量 fetch 后略微打乱，这里最好重新按时间排一下确保是 "Latest"
+        items = videos_data['items']
+        items.sort(key=lambda x: x['snippet']['publishedAt'], reverse=True)
+
+        for item in items:
+            if len(valid_videos) >= limit: break # 够了就停
+
             video = self._parse_video_data(item, channel_name)
-            if video: valid_videos.append(video)
+            if video: 
+                valid_videos.append(video)
+        
+        # 打印结果
+        Printer.channel_result(channel_name, len(valid_videos), limit)
         
         return valid_videos
 
     def _parse_video_data(self, item: Dict, channel_name: str) -> Optional[Dict]:
         try:
-            duration = self._parse_duration(item['contentDetails'].get('duration', 'PT0S'))
-            view_count = int(item['statistics'].get('viewCount', 0))
-            comment_count = int(item['statistics'].get('commentCount', 0))
+            duration_str = item['contentDetails'].get('duration', 'PT0S')
+            duration = self._parse_duration(duration_str)
+            
+            stats = item.get('statistics', {})
+            view_count = int(stats.get('viewCount', 0))
+            comment_count = int(stats.get('commentCount', 0))
 
-            # 严格按照 60 秒过滤 Shorts
+            # 仅保留时长符合的
             if not (self.config.VIDEO_FILTERS['MIN_DURATION'] <= duration <= self.config.VIDEO_FILTERS['MAX_DURATION']):
                 return None
-            if view_count < self.config.VIDEO_FILTERS['MIN_VIEWS']:
-                return None
-
+            
             return {
-                'videoId': item['id'],
+                'Video File': f"https://www.youtube.com/watch?v={item['id']}",
                 'title': item['snippet']['title'],
-                'description': item['snippet']['description'][:200],
-                'publishedAt': item['snippet']['publishedAt'],
-                'duration': duration,
+                'rawtext': item['snippet'].get('description', '')[:500],
+                'translated_text': "",
+                'Publish Date': item['snippet']['publishedAt'],
+                'Replies': comment_count,
+                'Reposts': 0,
                 'viewCount': view_count,
-                'commentCount': comment_count,
                 'channel_name': channel_name,
+                'duration': duration,
+                'Source Language': 'en',
+                'Target Language': '简体中文',
+                'Dubbing': 0,
+                'Status': '',
+                "Score" : 0
             }
-        except Exception: return None
+        except Exception:
+            return None
 
     @staticmethod
     def _parse_duration(duration_str: str) -> int:
-        import re
-        hours = re.search(r'(\d+)H', duration_str)
-        minutes = re.search(r'(\d+)M', duration_str)
-        seconds = re.search(r'(\d+)S', duration_str)
-        return (int(hours.group(1)) * 3600 if hours else 0) + \
-               (int(minutes.group(1)) * 60 if minutes else 0) + \
-               (int(seconds.group(1)) if seconds else 0)
+        match = re.match(r'PT(\d+H)?(\d+M)?(\d+S)?', duration_str)
+        if not match: return 0
+        hours = int(match.group(1)[:-1]) if match.group(1) else 0
+        minutes = int(match.group(2)[:-1]) if match.group(2) else 0
+        seconds = int(match.group(3)[:-1]) if match.group(3) else 0
+        return hours * 3600 + minutes * 60 + seconds
 
-# ============= 3. 数据处理器 =============
+# ============= 3. 数据处理与保存 =============
 
-class YouTubeDataProcessor:
+class DataProcessor:
     def __init__(self, videos_data: List[Dict]):
         self.videos_data = videos_data
 
-    def process_data(self) -> pd.DataFrame:
+    def process_and_save(self):
+        filename = CONFIG['OUTPUT_FILE']
+        
         if not self.videos_data:
-            logger.warning("没有采集到符合条件的 Shorts 视频")
-            return pd.DataFrame()
+            Printer.warn("本次运行未找到符合条件的视频。")
+            return
 
-        df = pd.DataFrame(self.videos_data)
+        # 直接转换为 DataFrame，不做任何随机删选
+        new_df = pd.DataFrame(self.videos_data)
         
-        # 【关键】修改为 Shorts 专用 URL 格式
-        df['Video File'] = 'https://www.youtube.com/shorts/' + df['videoId']
-        df['Source Language'] = 'en'
-        df['Target Language'] = '简体中文'
-        df['Dubbing'] = 0
-        df['Status'] = ''
+        # 确保列结构对齐
+        for col in COLUMNS:
+            if col not in new_df.columns: new_df[col] = ""
+        new_df = new_df[COLUMNS]
 
-        # 1. 保存所有抓取到的 Shorts (全量表)
-        os.makedirs('batch', exist_ok=True)
-        df.to_excel('batch/all_shorts_found.xlsx', index=False)
+        # 读取旧文件并合并
+        final_df = self._merge_with_existing(new_df, filename)
 
-        # 2. 智能筛选本次任务
-        df_selected = self._smart_selection(df)
-        
-        # 3. 合并到现有的任务清单
-        return self._merge_with_existing(df_selected)
-
-    def _smart_selection(self, df: pd.DataFrame) -> pd.DataFrame:
-        config = CONFIG['SELECTION']
-        unique_channels = df['channel_name'].unique()
-        selected_channels = random.sample(list(unique_channels), min(config['NUM_CHANNELS'], len(unique_channels)))
-        
-        results = []
-        for channel in selected_channels:
-            candidates = df[df['channel_name'] == channel].sort_values(by='commentCount', ascending=False)
-            top_pool = candidates.head(config['TOP_N_CANDIDATES'])
-            
-            n_select = min(random.randint(config['VIDEOS_PER_CHANNEL_MIN'], config['VIDEOS_PER_CHANNEL_MAX']), len(top_pool))
-            results.append(top_pool.sample(n=n_select))
-        
-        return pd.concat(results).sample(frac=1).reset_index(drop=True)
-
-    def _merge_with_existing(self, df_new: pd.DataFrame) -> pd.DataFrame:
-        target_file = 'batch/tasks_setting.xlsx'
+        # 保存
         try:
-            existing_df = pd.read_excel(target_file)
-            combined = pd.concat([existing_df, df_new], ignore_index=True)
-            return combined.drop_duplicates(subset=['Video File'], keep='first')
-        except: return df_new
+            os.makedirs(os.path.dirname(filename), exist_ok=True)
+            final_df.to_excel(filename, index=False)
+            Printer.success(f"文件保存成功: {filename}")
+            
+            # 打印最终统计表
+            self._print_summary(final_df)
+            
+        except PermissionError:
+            Printer.error(f"保存失败！请先关闭 Excel 文件: {filename}")
 
-# ============= 4. 运行入口 =============
+    def _merge_with_existing(self, new_df: pd.DataFrame, filename: str) -> pd.DataFrame:
+        if os.path.exists(filename):
+            try:
+                old_df = pd.read_excel(filename)
+                old_count = len(old_df)
+                
+                # 新数据在最后
+                combined_df = pd.concat([old_df, new_df], ignore_index=True)
+                # 根据 'Video File' 去重，保留 'first' (即保留旧文件里的状态)
+                final_df = combined_df.drop_duplicates(subset=['Video File'], keep='first')
+                
+                # 重新排序：按发布时间倒序 (可选，方便查看最新)
+                # 3. 计算综合互动分 (Engagement Score)
+                # 这里给 转发(Reposts) 和 评论(Replies) 更高的权重，因为它们比 观看(viewCount) 更难获得
+                # 公式：播放量 + 评论*5 + 转发*10 (权重可按需调整)
+                final_df['Score'] = (
+                    final_df['viewCount'] + 
+                    final_df['Replies'] * 5 + 
+                    final_df['Reposts'] * 10
+                )
+                # 4. 计算最终得分 (Score)
+                # 采用类似 Hacker News 的经典衰减公式：Score = Engagement / (Age + 2)^Gravity
+                # Gravity(重力系数) 越大，新内容排得越靠前。建议取值 1.5 到 1.8 
+                final_df = final_df.sort_values(by=['Score', 'Publish Date'], ascending=[False, False])
+                # 5. 排序
+                #final_df = final_df.sort_values(by='Publish Date', ascending=False)
+
+                # 计算统计信息
+                total_fetched = len(new_df)
+                actual_added = len(final_df) - old_count
+                duplicates = total_fetched - actual_added
+                
+                Printer.info(f"数据合并: 库中原有 {old_count} | 本次抓取 {total_fetched} | 实际入库 {Fore.GREEN}{actual_added}{Style.RESET_ALL} | 重复忽略 {duplicates}")
+                return final_df
+            except Exception as e:
+                Printer.error(f"读取旧文件失败: {e}，将创建新文件。")
+                return new_df
+        else:
+            Printer.info("创建新任务文件...")
+            return new_df
+
+    def _print_summary(self, df: pd.DataFrame):
+        """打印漂亮的终端统计表"""
+        Printer.header("📊 最终数据库统计")
+        
+        # 统计每个 channel 的视频数
+        summary = df['channel_name'].value_counts().reset_index()
+        summary.columns = ['Channel', 'Videos in DB']
+        
+        print(tabulate(summary, headers='keys', tablefmt='simple_outline', showindex=False))
+        print(f"\nTotal Tasks: {len(df)}")
+
+# ============= 4. 主程序 =============
 
 async def main():
+    start_time = time.time()
+    Printer.header("🚀 YouTube 最新视频抓取工具 (Top 10)")
+    
     config = YouTubeConfig()
-    os.makedirs('batch', exist_ok=True)
+    all_videos = []
+    
+    print(f"{Fore.WHITE}目标频道: {len(CONFIG['CHANNELS'])} 个 | 单频道目标: 最新 {CONFIG['FETCH_LIMIT']} 条\n")
 
     async with YouTubeAPI(config) as api:
         tasks = [
-            api.get_latest_videos(cid, name, CONFIG['MAX_RESULTS_PER_CHANNEL'])
+            api.get_latest_videos(cid, name)
             for name, cid in CONFIG['CHANNELS'].items()
         ]
         
-        results = []
-        with tqdm(total=len(tasks), desc="抓取 Shorts 进度") as pbar:
+        # 进度条
+        with tqdm(total=len(tasks), desc="扫描进度", unit="channel", colour='green') as pbar:
             for coro in asyncio.as_completed(tasks):
                 res = await coro
-                results.extend(res)
+                all_videos.extend(res)
                 pbar.update(1)
 
-        processor = YouTubeDataProcessor(results)
-        df_final = processor.process_data()
-
-        if not df_final.empty:
-            df_final[['Video File', 'title', 'description', 'viewCount', 
-                     'channel_name', 'duration', 'Source Language', 
-                     'Target Language', 'Dubbing', 'Status']].to_excel('batch/tasks_setting.xlsx', index=False)
-            logger.info(f"✅ 成功提取 {len(df_final)} 条任务到 batch/tasks_setting.xlsx")
+    Printer.header(f"📥 扫描完成，准备处理数据 (共获取 {len(all_videos)} 条)")
+    
+    processor = DataProcessor(all_videos)
+    processor.process_and_save()
+    
+    duration = time.time() - start_time
+    print(f"\n✨ 全部完成，耗时: {duration:.2f} 秒")
 
 if __name__ == "__main__":
     if platform.system() == 'Windows':

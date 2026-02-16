@@ -8,7 +8,7 @@ from google.auth.transport.requests import Request
 import pickle
 
 # ==================== 配置区 ====================
-VIDEO_FOLDER = Path("output/moved_files")
+VIDEO_FOLDER = Path("output/moved_files/done/done")
 CLIENT_SECRETS_FILE = "client_secrets.json"
 TOKEN_PICKLE = "token.pickle" # 存储授权信息，避免重复登录
 SCOPES = ['https://www.googleapis.com/auth/youtube.upload']

@@ -170,11 +170,14 @@ def draw_text_line_centered(draw, line, font, x_start, y_top, box_height, highli
     current_x += font.getlength(highlight_word)
     draw.text((current_x, draw_y), parts[1], font=font, fill=NORMAL_COLOR)
 
+import re
+from PIL import Image, ImageFilter, ImageDraw
 
 def cover_making(image_path, output_path, translated_text, logo_path='figure.png'):
     # 假设定义的全局变量，如果没有请在函数内定义
-    TARGET_WIDTH = 1920
-    TARGET_HEIGHT = 1080
+    # 推荐设置：小红书黄金比例 3:4
+    TARGET_WIDTH = 1242
+    TARGET_HEIGHT = 1660
     try:
         # 1. 处理背景图
         bg = Image.open(image_path).convert('RGBA')
@@ -267,8 +270,6 @@ def translate_with_api(text_content: str) -> str:
 1. 谁是主角？中国观众认识吗？不认识加什么前缀？
 2. 视频里最劲爆的一个画面或一句话是什么？
 3. 如何用“人话”把这两点串起来？
-4. 怎么样激发中国观众的点击欲望
-5. 怎么样符合中国观众的舆论论述倾向,体现民族自信
 
 # Output Goal
 输出一个文件名，不要包含任何前缀或后缀，直接输出结果。

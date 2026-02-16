@@ -19,3 +19,12 @@
 ./logs/*
 client_secrets.json
 *.pickle
+
+batch/browser_data/
+batch/debug_douyin/
+batch/debug_tencent/
+**/__pycache__/
+*.png
+*.pyc
+*.log*
+EOF

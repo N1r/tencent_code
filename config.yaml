@@ -15,11 +15,11 @@ api:
   key: 'ak_1lt5CC7fR0YP9l47On12532E7b78k'
   #base_url: 'https://api.302.ai'
   base_url: 'https://api.longcat.chat/openai'
-  model: 'LongCat-Flash-Chat'
-  #model: 'gemini-2.5-flash-lite'
+  #model: 'LongCat-Flash-Chat'
+  model: 'LongCat-Flash-Lite'
   llm_support_json: false
 # *Number of LLM multi-threaded accesses, set to 1 if using local LLM
-max_workers: 1
+max_workers: 2
 
 # Language settings, written into the prompt, can be described in natural language
 target_language: '简体中文'

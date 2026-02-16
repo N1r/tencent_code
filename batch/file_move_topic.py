@@ -91,9 +91,7 @@ def translate_with_api(text: str) -> str:
     }
     prompt = """
 # Role
-
 你是一名追求“高信息密度”的B站国际时政区资深编辑。你的核心能力是“降噪”：从冗长的外媒字幕中，提炼出最具体、最反直觉、或最具细节感的逻辑链条，而非简单的概括。
-
 # Input Data
 
 - 原标题：{folder_name}
@@ -112,8 +110,12 @@ def translate_with_api(text: str) -> str:
    - 格式: 具象化细节/核心逻辑/经典语句.
    - 仅输出一行，严禁半角符号（: / \ ? * " < > |），字数35-50字。
 
-# Workflow
+3. 身份锚点（Identity Tag）：
 
+出现的主要人物，紧跟一个中国观众易理解的身份标签。
+示例：勇士队主教练科尔、特斯拉CEO马斯克, 财政部长贝森特。
+
+# Workflow
 1. 分析字幕，找到最具争议或最犀利的一句话。
 2. 输出结果。
 
@@ -175,8 +177,15 @@ def process_and_move_files():
     final_titles_for_noti = []
     
     # 获取待处理文件夹（排除 moved_files）
-    folders = [f for f in output_dir.iterdir() if f.is_dir() and f.name != "moved_files" and not f.name.startswith('.')]
-    
+    #folders = [f for f in output_dir.iterdir() if f.is_dir() and f.name != "moved_files" and not f.name.startswith('.')]
+    # 获取待处理文件夹（排除 moved_files 和 ERROR 文件夹）
+    folders = [
+        f for f in output_dir.iterdir() 
+        if f.is_dir() 
+        and f.name != "moved_files" 
+        and f.name.upper() != "ERROR"  # <--- 新增：忽略 ERROR 文件夹（不区分大小写）
+        and not f.name.startswith('.')
+    ]
     for folder in folders:
         folder_name = folder.name
         print(f"\n--- 正在处理: {folder_name} ---")
